@@ -5,16 +5,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-POSTGRES_USER = os.getenv("POSTGRES_USER", "hukum_ai_user")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "passwordku")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "hukum_ai_db")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DATABASE_URL = (
-    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
-    f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-)
+if not DATABASE_URL:
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "hukum_ai_user")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "passwordku")
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "hukum_ai_db")
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
+    DATABASE_URL = (
+        f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+        f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
+
+print(">>> DATABASE_URL in runtime:", DATABASE_URL)
 
 engine = create_engine(DATABASE_URL, echo=False)
 

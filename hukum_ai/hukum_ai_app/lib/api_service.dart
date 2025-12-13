@@ -197,7 +197,7 @@ class AuthUser {
 }
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:8000/docs';
+  static const String baseUrl = 'https://ippl11231070c-production.up.railway.app';
 
   Future<ChatResult> askTrafficLaw(
     String question, {
