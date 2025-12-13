@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+<<<<<<< HEAD
+      <module fileurl="file://$PROJECT_DIR$/.idea/HAI.iml" filepath="$PROJECT_DIR$/.idea/HAI.iml" />
+=======
+      <module fileurl="file://$PROJECT_DIR$/.idea/hukum_ai.iml" filepath="$PROJECT_DIR$/.idea/hukum_ai.iml" />
+>>>>>>> 727fba9 (commit)
+    </modules>
+  </component>
+</project>

@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+google-genai
+chromadb
+python-dotenv
+passlib[bcrypt]
+pydantic
+email-validator

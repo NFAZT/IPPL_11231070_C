@@ -1,0 +1,835 @@
+[
+  {
+    "text": "kalau aku ngebut lewat batas kecepatan hukumannya apa?",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda nerobos lampu merah berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi kalau menerobos lampu merah di persimpangan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman untuk balap liar di jalan raya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau ketahuan balap liar malam minggu kena pasal berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi tidak memakai helm saat naik motor",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau bonceng tiga di motor",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kalau anak di bawah umur nyetir motor di jalan raya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau belum punya SIM tapi sudah bawa motor dendanya berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa pasal yang mengatur mengemudi tanpa SIM",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "bawa mobil tanpa SIM kena pidana apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau lupa bawa SIM pas ditilang dendanya berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa bedanya sanksi tidak punya SIM sama lupa bawa SIM",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau tidak membawa STNK",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi mengemudi kendaraan tanpa STNK yang sah apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau STNK mati tapi tetap dipakai di jalan kena denda berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada sanksi kalau plat nomor tidak terpasang",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda berkendara tanpa plat nomor di jalan raya berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman memakai plat nomor palsu apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa pasal untuk knalpot bising yang mengganggu",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda pakai knalpot racing terlalu berisik di jalan umum",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi kalau motor tidak pakai spion lengkap apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah bisa ditilang kalau lepas salah satu spion motor",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau ban motor sudah gundul tapi tetap dipakai",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi mobil dengan ban sudah botak tapi masih beroperasi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi parkir sembarangan di badan jalan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda parkir di tikungan yang membahayakan berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada hukuman kalau parkir di trotoar",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi kendaraan yang naik ke trotoar untuk parkir apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau melawan arus di jalan satu arah",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman melawan arus di jalan raya menurut uu lalu lintas apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi kalau tidak memberi jalan kepada pejalan kaki di zebra cross",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda kalau tidak mengutamakan pejalan kaki yang menyeberang berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi menghalangi jalur sepeda dengan mobil apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada pasal untuk kendaraan yang masuk jalur sepeda",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman masuk jalur busway pakai kendaraan pribadi apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau motor nekat lewat jalur busway",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi tidak menyalakan lampu utama motor di siang hari apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda lupa menyalakan lampu motor di siang hari berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa hukuman jika tidak menyalakan lampu mobil di malam hari",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau berkendara sambil main hp",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi main handphone saat nyetir mobil apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa hukuman mengemudi dalam keadaan mabuk",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda kalau ketahuan nyetir di bawah pengaruh alkohol berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada pasal untuk orang yang mengemudi ugal ugalan di jalan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi mengemudi zigzag dengan sengaja apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda melanggar batas kecepatan maksimum di jalan tol",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kalau ngebut melebihi batas kecepatan di dalam kota apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi mengabaikan perintah polisi lalu lintas di jalan raya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah bisa dipidana kalau tidak mau berhenti saat disuruh polisi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa denda kalau tidak memakai sabuk pengaman di kursi depan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman penumpang depan mobil yang tidak pakai seatbelt",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau penumpang motor tidak memakai helm",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi pengendara motor yang membiarkan boncenger tanpa helm apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah boleh bonceng tiga dan kalau tidak boleh dendanya berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda kalau bawa penumpang lebih dari satu di motor tanpa kereta samping berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi nerobos palang pintu kereta api apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kalau tetap lewat meski sinyal kereta sudah bunyi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi jika tidak memberi jalan pada ambulans yang sedang bertugas",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda jika tidak mengutamakan kendaraan pemadam kebakaran",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman pasang lampu strobo biru di mobil pribadi apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah boleh pakai sirene di mobil biasa dan kalau tidak boleh dendanya berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi truk yang kelebihan muatan di jalan umum apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau truk barang melebihi daya angkut yang diizinkan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman mengangkut orang di bak terbuka mobil barang apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah boleh naik di bak pick up dan kalau tidak boleh sanksinya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi sopir angkot yang menaikkan penumpang sembarangan di tengah jalan apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau bus berhenti di luar halte resmi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kalau bus jalan dengan pintu terbuka terus",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi jika sopir kabur setelah menyebabkan kecelakaan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "pidana untuk pengemudi yang lari dari tempat kejadian kecelakaan apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kecelakaan lalu lintas yang mengakibatkan luka ringan apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa ancaman pidana kalau kelalaian menyebabkan luka berat pada orang lain",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa ancaman hukuman jika kecelakaan karena lalai sampai ada korban meninggal",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berbeda tidak sanksi kecelakaan karena lalai dengan kecelakaan karena sengaja ugal ugalan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah bisa dicabut SIM kalau sering melanggar aturan lalu lintas",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa dasar hukum pencabutan SIM bagi pengemudi yang melakukan tindak pidana lalu lintas",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "tips aman berkendara malam hari dong",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara berkendara yang aman saat hujan lebat",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja tips supaya tidak mudah ngantuk saat nyetir jauh",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengurangi risiko kecelakaan di jalan tol",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang harus dilakukan sebelum berangkat perjalanan jauh dengan mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips persiapan naik motor jarak jauh supaya lebih aman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara menyalip truk besar dengan aman di jalan raya",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja hal yang perlu diperhatikan saat berkendara di tikungan tajam",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman mengendarai motor saat angin kencang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana caranya bawa anak kecil di mobil biar lebih aman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apakah perlu kursi khusus anak di mobil dan kenapa itu penting",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana posisi duduk yang benar saat mengemudi mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengatur jarak aman dengan kendaraan depan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara menghindari blind spot truk dan bus",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau tiba tiba rem blong",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana menghadapi situasi darurat kalau ban meletus di jalan tol",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman berkendara di area sekolah yang banyak anak menyeberang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara tetap sabar dan tidak emosi saat macet panjang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang harus dilakukan kalau disalip pengendara ugal ugalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengurangi distraksi saat mengemudi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara yang benar menggunakan lampu sein",
+    "label": "tips_umum"
+  },
+  {
+    "text": "kapan sebaiknya menyalakan lampu hazard dan kapan tidak boleh",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips memilih helm yang aman dan nyaman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang perlu dicek di motor sebelum dipakai harian",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara merawat rem motor biar tetap pakem",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman membawa barang bawaan di motor",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara aman membawa hewan peliharaan di mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja kesalahan umum pengemudi pemula yang perlu dihindari",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips lulus ujian praktik SIM C pertama kali",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara belajar parkir paralel yang aman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau baru pertama kali nyetir di jalan tol",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana etika menggunakan klakson yang baik",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips berkendara aman saat malam hari di jalan sepi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang harus dilakukan kalau kendaraan mogok di tengah jalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana prosedur yang aman saat mengganti ban di pinggir jalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengantar orang tua yang lansia pakai mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara aman berkendara sambil membawa bayi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja tanda fisik bahwa pengemudi sudah terlalu lelah dan harus istirahat",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengatur jadwal istirahat untuk perjalanan jauh dengan mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara menghindari aquaplaning saat hujan deras",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau kaca mobil berembun saat hujan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman berkendara di jalan sempit dua arah",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara memilih jalur yang aman saat menyalip di jalan dua arah",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja hal yang perlu diperhatikan saat membawa kendaraan sewaan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips berkendara aman saat membawa barang banyak di bagasi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara menghadapi razia polisi dengan tenang dan sopan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau diberhentikan polisi di jalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman naik ojek online sebagai penumpang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang perlu diperhatikan sebelum naik angkutan umum di malam hari",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengecek status tilang online dengan benar",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengurus perpanjangan SIM supaya tidak mepet masa berlaku",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa langkah yang harus dilakukan kalau SIM hilang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengatur posisi spion agar jarak pandang maksimal",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips berkendara aman di daerah wisata yang ramai",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau melihat kecelakaan di depan mata",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara memberi pertolongan pertama yang aman di lokasi kecelakaan lalu lintas",
+    "label": "tips_umum"
+  },
+    {
+    "text": "kalau motor saya pakai lampu putih sangat terang apakah ada sanksinya",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "denda pakai lampu tembak yang menyilaukan pengendara lain berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa hukuman kalau saya bawa motor di trotoar untuk memotong jalan",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau naik motor masuk jalan tol sanksinya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada denda untuk mobil yang berhenti mendadak di jalan tol tanpa alasan darurat",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman kalau berhenti di bahu jalan tol hanya untuk istirahat tanpa keadaan darurat apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi mengemudi tanpa menyalakan lampu sein saat belok",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya putar balik sembarangan di jalan raya bisa ditilang pasal berapa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau melewati garis marka jalan yang tidak boleh dilintasi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada sanksi jika saya berhenti di atas zebra cross saat lampu merah",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi untuk pengemudi yang tidak mematikan mesin saat isi bahan bakar di SPBU apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya menghalangi jalur damkar dan ambulans di perempatan hukumannya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa pidana bagi sopir angkot yang memaksa penumpang naik dengan cara menarik paksa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau pengemudi angkot sengaja turunkan penumpang di tempat berbahaya apakah ada sanksinya",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada hukuman buat perusahaan bus yang tidak mengasuransikan penumpangnya",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau angkutan umum beroperasi tanpa izin trayek",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "sanksi hukum untuk travel gelap yang mengangkut penumpang tanpa izin resmi apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya menutup plat nomor dengan mika gelap supaya tidak terbaca kamera etle apakah melanggar",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi mengganti plat nomor dengan gaya tulisan sendiri yang tidak sesuai standar",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya menarik gerobak atau trailer tanpa izin dan melanggar ketentuan muatan kena pasal apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman untuk perusahaan yang memaksa sopir mengemudi melebihi jam kerja sehingga berbahaya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya tidak melaporkan kecelakaan yang saya lihat apakah ada kewajiban dan sanksinya",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apakah ada sanksi jika saya sengaja mengubah jalur atau menyingkirkan rambu lalu lintas",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya memasang reklame atau spanduk yang menutupi rambu lalu lintas hukumannya apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "apa sanksi membawa muatan yang menonjol ke belakang tanpa tanda pengaman",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "berapa denda kalau kendaraan bermotor tidak lulus uji emisi tapi tetap beroperasi",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya mengemudi sambil pakai earphone di kedua telinga apakah melanggar dan kena denda",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "hukuman untuk pengemudi yang sengaja memotong antrean di perlintasan kereta apa",
+    "label": "butuh_pasal"
+  },
+  {
+    "text": "kalau saya menurunkan penumpang di tengah jalan tol apakah ada sanksi khusus",
+    "label": "butuh_pasal"
+  },
+
+  {
+    "text": "gimana cara jelasin ke orang tua soal pentingnya pakai sabuk pengaman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips biar penumpang belakang juga mau pakai seatbelt",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja yang harus disiapkan kalau mau bawa mobil keluar kota pertama kali",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara menenangkan diri setelah hampir kecelakaan di jalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman berkendara di sekitar truk dan kendaraan besar lain",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya saya lakukan kalau diikuti pengendara lain yang mencurigakan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara memilih jalur paling aman saat macet panjang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips berkendara sendirian di malam hari supaya lebih waspada",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang perlu dilakukan sebelum meminjamkan kendaraan ke teman",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara ngobrol ke teman yang suka ugal ugalan supaya dia lebih hati hati",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman kalau harus nyetir dalam kondisi hujan deras dan banjir kecil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengecek tekanan ban yang ideal untuk perjalanan jauh",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau merasa mobil ditabrak pelan dari belakang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips menghindari konflik dengan pengguna jalan lain saat terjadi senggolan kecil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara memilih jalur paling aman saat berkendara di kota yang belum pernah saya kunjungi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja perlengkapan darurat yang sebaiknya selalu ada di mobil",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips mengatur posisi barang di bagasi agar mobil tetap stabil",
+    "label": "tips_umum"
+  },
+    {
+    "text": "apa yang perlu diperhatikan saat berkendara di dekat sekolah yang banyak anak menyebrang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips supaya tidak mudah panik waktu pertama kali bawa mobil sendirian",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara melatih feeling jarak saat nyetir di jalan sempit",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan sebelum melewati persimpangan tanpa lampu lalu lintas",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman berkendara di jalan turunan panjang supaya rem tidak cepat panas",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengatur kecepatan saat melewati polisi tidur",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa saja kebiasaan kecil yang bisa mengurangi risiko kecelakaan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips memilih waktu bepergian supaya tidak terlalu terjebak macet",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara mendidik anak supaya paham bahaya bermain di jalan raya",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya saya lakukan kalau ban motor sering selip di jalan basah",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips menjaga konsentrasi kalau harus nyetir malam setelah kerja seharian",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara bersikap kalau ada pengguna jalan lain yang marah marah",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang perlu disampaikan ke penumpang supaya tidak mengganggu pengemudi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips menghindari tabrakan beruntun di jalan tol",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara memilih jalur yang paling aman saat hujan deras dan genangan air",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana cara menilai apakah kondisi tubuh masih layak untuk menyetir",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman berkendara saat sedang puasa dan kondisi tubuh lemah",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau harus berhenti mendadak di jalan tol",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara memilih tempat berhenti yang aman kalau merasa mengantuk",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips untuk pengendara motor yang baru pindah dari kota kecil ke kota besar",
+    "label": "tips_umum"
+  },
+  {
+    "text": "gimana menghadapi pengendara lain yang suka menyalakan lampu jauh terus menerus",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dilakukan kalau kaca spion mobil tiba tiba patah di jalan",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips aman kalau terpaksa harus lewat jalan alternatif yang gelap dan sepi",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara mengatur barang bawaan di motor biar tidak mengganggu setang",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa langkah awal yang perlu dilakukan setelah terlibat kecelakaan ringan tanpa korban",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips menjaga emosi supaya tidak terpancing saat ada yang sengaja memotong jalur",
+    "label": "tips_umum"
+  },
+  {
+    "text": "bagaimana cara menjelaskan ke teman soal bahaya berkendara sambil main hp",
+    "label": "tips_umum"
+  },
+  {
+    "text": "apa yang sebaiknya dipelajari dulu sebelum ikut ujian teori SIM",
+    "label": "tips_umum"
+  },
+  {
+    "text": "tips latihan mandiri sebelum ikut ujian praktik SIM A",
+    "label": "tips_umum"
+  }
+]
