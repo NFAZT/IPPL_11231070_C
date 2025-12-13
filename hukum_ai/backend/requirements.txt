@@ -6,3 +6,7 @@ python-dotenv
 passlib[bcrypt]
 pydantic
 email-validator
+joblib
+sqlalchemy
+psycopg2-binary
+python-multipart
