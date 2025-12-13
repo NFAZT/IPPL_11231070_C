@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
-from db import SessionLocal
+from db import SessionLocal, init_db
 from models import (
     LawArticle,
     SystemMeta,
@@ -45,12 +45,14 @@ GEN_MODEL = "gemini-2.0-flash"
 INDEX_PATH = BASE_DIR / "data" / "traffic_law_index.json"
 INTENT_MODEL_PATH = BASE_DIR / "data" / "intent_model.joblib"
 
-#index RAG
 try:
     with INDEX_PATH.open(encoding="utf-8") as f:
         INDEX: List[Dict[str, Any]] = json.load(f)
 except FileNotFoundError:
-    print(f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. RAG akan jalan tanpa konteks.")
+    print(
+        f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. "
+        "RAG akan jalan tanpa konteks."
+    )
     INDEX = []
 
 try:
@@ -59,12 +61,14 @@ except Exception as e:
     print(f"[WARNING] Gagal memuat intent model dari {INTENT_MODEL_PATH}: {e}")
     INTENT_MODEL = None
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 
 def embed_text(text: str) -> List[float]:
     result = client.models.embed_content(
@@ -87,8 +91,30 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 def is_traffic_related(question: str) -> bool:
     q = question.lower()
-    keywords = ["lalu lintas", "angkutan jalan", "jalan raya", "jalan tol", "helm", "sabuk pengaman", "motor", "mobil", "kendaraan", "sim", "stnk", "tilang", "ngebut", "batas kecepatan", "rambu", "lampu merah", "polisi lalu lintas", "pengemudi", "penumpang", "berkendara",]
+    keywords = [
+        "lalu lintas",
+        "angkutan jalan",
+        "jalan raya",
+        "jalan tol",
+        "helm",
+        "sabuk pengaman",
+        "motor",
+        "mobil",
+        "kendaraan",
+        "sim",
+        "stnk",
+        "tilang",
+        "ngebut",
+        "batas kecepatan",
+        "rambu",
+        "lampu merah",
+        "polisi lalu lintas",
+        "pengemudi",
+        "penumpang",
+        "berkendara",
+    ]
     return any(kw in q for kw in keywords)
+
 
 def search_top_k(
     query_embedding: List[float],
@@ -109,14 +135,15 @@ def search_top_k(
     top_docs = [d for s, d in scored[:k] if s >= min_score]
     return top_docs
 
-def predict_intent(question: str) -> str:
 
+def predict_intent(question: str) -> str:
     if INTENT_MODEL is None:
         return "tips_umum"
     try:
         return str(INTENT_MODEL.predict([question])[0])
     except Exception:
         return "tips_umum"
+
 
 def build_context(docs: List[Dict[str, Any]]) -> str:
     if not docs:
@@ -133,10 +160,25 @@ def build_context(docs: List[Dict[str, Any]]) -> str:
 
 def detect_tone(question: str) -> str:
     q = question.lower()
-    slang_words = ["ga", "gak", "gk", "nggak", "ngga", "lu", "lo", "loe", "bro", "bray", "wkwk", "haha", "hehe",]
+    slang_words = [
+        "ga",
+        "gak",
+        "gk",
+        "nggak",
+        "ngga",
+        "lu",
+        "lo",
+        "loe",
+        "bro",
+        "bray",
+        "wkwk",
+        "haha",
+        "hehe",
+    ]
     if any(w in q for w in slang_words):
         return "santai"
     return "formal"
+
 
 def generate_answer(question: str, context: str, tone: str = "formal") -> str:
     if tone == "santai":
@@ -206,10 +248,16 @@ JAWABAN:
     )
     return (result.text or "").strip()
 
+
 app = FastAPI(
     title="Hukum Lalu Lintas Chatbot (RAG + Gemini)",
     description="Backend chatbot hukum lalu lintas dengan RAG manual dan Gemini",
 )
+
+@app.on_event("startup")
+def on_startup():
+    print("[STARTUP] init_db() dipanggil, membuat tabel jika belum ada...")
+    init_db()
 
 app.add_middleware(
     CORSMiddleware,
@@ -219,10 +267,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ChatRequest(BaseModel):
     question: str
     username: str | None = None
     session_id: int | None = None
+
 
 class SourceDoc(BaseModel):
     id: str
@@ -230,13 +280,16 @@ class SourceDoc(BaseModel):
     isi: str
     score: float
 
+
 class ChatResponse(BaseModel):
     answer: str
     sources: List[SourceDoc]
     session_id: int | None = None
 
+
 PasswordStr = constr(min_length=8, max_length=128)
 UsernameStr = constr(min_length=3, max_length=50)
+
 
 class RegisterRequest(BaseModel):
     username: UsernameStr
@@ -244,17 +297,20 @@ class RegisterRequest(BaseModel):
     password: PasswordStr
     full_name: str | None = None
 
+
 class LoginRequest(BaseModel):
-    #bisa diisi username atau email
     identifier: str
     password: str
+
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
+
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: PasswordStr
+
 
 class UserOut(BaseModel):
     id: int
@@ -265,11 +321,14 @@ class UserOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class LoginResponse(BaseModel):
     user: UserOut
 
+
 class SimpleMessageResponse(BaseModel):
     message: str
+
 
 class LawArticleBase(BaseModel):
     uu: str
@@ -280,8 +339,10 @@ class LawArticleBase(BaseModel):
     status: str = "berlaku"
     keywords: List[str] | None = None
 
+
 class LawArticleCreate(LawArticleBase):
     pass
+
 
 class LawArticleUpdate(BaseModel):
     uu: str | None = None
@@ -292,8 +353,10 @@ class LawArticleUpdate(BaseModel):
     status: str | None = None
     keywords: List[str] | None = None
 
+
 class LawArticleOut(LawArticleBase):
     id: int
+
 
 def article_to_schema(article: LawArticle) -> LawArticleOut:
     kws = None
@@ -310,6 +373,7 @@ def article_to_schema(article: LawArticle) -> LawArticleOut:
         keywords=kws,
     )
 
+
 class ChatSessionSummary(BaseModel):
     id: int
     title: str | None = None
@@ -318,11 +382,13 @@ class ChatSessionSummary(BaseModel):
     last_message_preview: str | None = None
     total_messages: int
 
+
 class ChatMessageOut(BaseModel):
     id: int
     role: str
     content: str
     created_at: datetime
+
 
 class ChatSessionDetail(BaseModel):
     id: int
@@ -331,6 +397,7 @@ class ChatSessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime | None = None
     messages: List[ChatMessageOut]
+
 
 def rebuild_index_from_db(db: Session) -> int:
     articles: List[LawArticle] = (
@@ -360,7 +427,9 @@ def rebuild_index_from_db(db: Session) -> int:
 
         isi = "\n".join(isi_parts).strip()
         if not isi:
-            print(f"[rebuild-index] Dokumen id={doc_id} tidak punya isi, dilewati.")
+            print(
+                f"[rebuild-index] Dokumen id={doc_id} tidak punya isi, dilewati."
+            )
             continue
 
         vec = embed_text(isi)
@@ -383,8 +452,11 @@ def rebuild_index_from_db(db: Session) -> int:
     global INDEX
     INDEX = new_index
 
-    print(f"[rebuild-index] Selesai. Total: {len(new_index)} dokumen → {INDEX_PATH}")
+    print(
+        f"[rebuild-index] Selesai. Total: {len(new_index)} dokumen → {INDEX_PATH}"
+    )
     return len(new_index)
+
 
 def session_to_summary(session: ChatSession) -> ChatSessionSummary:
     messages = session.messages or []
@@ -392,7 +464,8 @@ def session_to_summary(session: ChatSession) -> ChatSessionSummary:
     if messages:
         last_msg = max(
             messages,
-            key=lambda m: m.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda m: m.created_at
+            or datetime.min.replace(tzinfo=timezone.utc),
         )
 
     preview = None
@@ -409,6 +482,7 @@ def session_to_summary(session: ChatSession) -> ChatSessionSummary:
         total_messages=len(messages),
     )
 
+
 def message_to_schema(msg: ChatMessage) -> ChatMessageOut:
     return ChatMessageOut(
         id=msg.id,
@@ -417,9 +491,11 @@ def message_to_schema(msg: ChatMessage) -> ChatMessageOut:
         created_at=msg.created_at,
     )
 
+
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "Backend hukum lalu lintas siap."}
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
@@ -434,7 +510,10 @@ async def chat(
 
     if not question:
         return ChatResponse(
-            answer="Silakan ajukan pertanyaan seputar lalu lintas atau hukum lalu lintas.",
+            answer=(
+                "Silakan ajukan pertanyaan seputar lalu lintas atau hukum "
+                "lalu lintas."
+            ),
             sources=[],
             session_id=req.session_id,
         )
@@ -446,7 +525,6 @@ async def chat(
             session_obj = db.get(ChatSession, req.session_id)
 
         if session_obj is None:
-            #buat sesi baru
             session_obj = ChatSession(
                 username=username,
                 title=question[:120],
@@ -462,7 +540,10 @@ async def chat(
         intent = predict_intent(question)
 
     session_id_for_log = session_obj.id if session_obj else None
-    print(f"[INTENT] {intent} | session={session_id_for_log} | user={username or '-'} | Q: {question}")
+    print(
+        f"[INTENT] {intent} | session={session_id_for_log} | "
+        f"user={username or '-'} | Q: {question}"
+    )
 
     query_emb = embed_text(question)
     docs = search_top_k(query_emb, k=3, min_score=0.3)
@@ -480,7 +561,7 @@ async def chat(
         tone = detect_tone(question)
         answer_text = generate_answer(question, context_text, tone=tone)
 
-        sources_with_score = []
+        sources_with_score: List[SourceDoc] = []
 
         if intent == "butuh_pasal":
             for d in docs:
@@ -493,11 +574,7 @@ async def chat(
                         score=score,
                     )
                 )
-        else:
-            sources_with_score = []
 
-    #simpan riwayat pesan ke DB
-        #simpan riwayat pesan ke DB HANYA untuk user login
     if not is_guest and session_obj is not None:
         session_obj.updated_at = datetime.now(timezone.utc)
 
@@ -520,19 +597,18 @@ async def chat(
             session_id=session_obj.id,
         )
 
-    #guest: tidak simpan apa-apa
     return ChatResponse(
         answer=answer_text,
         sources=sources_with_score,
         session_id=None,
     )
 
+
 @app.post("/auth/register", response_model=UserOut)
 def register(
     payload: RegisterRequest,
     db: Session = Depends(get_db),
 ):
-    #cek username
     existing_username = (
         db.query(User)
         .filter(User.username == payload.username)
@@ -544,7 +620,6 @@ def register(
             detail="Username sudah dipakai. Silakan pilih username lain.",
         )
 
-    #cek email
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(
@@ -563,6 +638,7 @@ def register(
     db.commit()
     db.refresh(user)
     return user
+
 
 @app.post("/auth/login", response_model=LoginResponse)
 def login(
@@ -590,6 +666,7 @@ def login(
         )
 
     return LoginResponse(user=user)
+
 
 @app.post("/auth/forgot-password", response_model=SimpleMessageResponse)
 def forgot_password(
@@ -624,6 +701,7 @@ def forgot_password(
         message="Jika email terdaftar, tautan reset password telah dikirim.",
     )
 
+
 @app.post("/auth/reset-password", response_model=SimpleMessageResponse)
 def reset_password(
     payload: ResetPasswordRequest,
@@ -655,6 +733,7 @@ def reset_password(
 
     return SimpleMessageResponse(message="Password berhasil direset.")
 
+
 @app.post("/articles", response_model=LawArticleOut)
 def create_article(
     payload: LawArticleCreate,
@@ -678,6 +757,7 @@ def create_article(
 
     return article_to_schema(article)
 
+
 @app.put("/articles/{article_id}", response_model=LawArticleOut)
 def update_article(
     article_id: int,
@@ -692,7 +772,10 @@ def update_article(
 
     if "keywords" in data:
         keywords = data.pop("keywords")
-        if keywords is not None and hasattr(article, "set_keywords"):
+        if (
+            keywords is not None
+            and hasattr(article, "set_keywords")
+        ):
             article.set_keywords(keywords)
 
     for field, value in data.items():
@@ -702,6 +785,7 @@ def update_article(
     db.refresh(article)
 
     return article_to_schema(article)
+
 
 @app.delete("/articles/{article_id}")
 def delete_article(
@@ -717,6 +801,7 @@ def delete_article(
 
     return {"detail": "Pasal berhasil dihapus"}
 
+
 @app.get("/articles/{article_id}", response_model=LawArticleOut)
 def get_article(
     article_id: int,
@@ -727,6 +812,7 @@ def get_article(
         raise HTTPException(status_code=404, detail="Pasal tidak ditemukan")
     return article_to_schema(article)
 
+
 @app.get("/articles", response_model=List[LawArticleOut])
 def list_articles(
     limit: int = 50,
@@ -734,6 +820,7 @@ def list_articles(
 ):
     rows = db.query(LawArticle).order_by(LawArticle.id).limit(limit).all()
     return [article_to_schema(a) for a in rows]
+
 
 @app.post("/admin/rebuild-index")
 def admin_rebuild_index(
@@ -766,6 +853,7 @@ def admin_rebuild_index(
             detail=f"Gagal membangun ulang index: {e}",
         )
 
+
 @app.get("/admin/index-status")
 def admin_index_status(
     db: Session = Depends(get_db),
@@ -780,6 +868,7 @@ def admin_index_status(
         "indexed_documents": len(INDEX),
     }
 
+
 @app.get("/chat-history/{username}", response_model=List[ChatSessionSummary])
 def get_chat_history(
     username: str,
@@ -793,6 +882,7 @@ def get_chat_history(
     )
     return [session_to_summary(s) for s in rows]
 
+
 @app.get("/chat-sessions/{session_id}", response_model=ChatSessionDetail)
 def get_chat_session_detail(
     session_id: int,
@@ -800,7 +890,10 @@ def get_chat_session_detail(
 ):
     session_obj = db.get(ChatSession, session_id)
     if not session_obj:
-        raise HTTPException(status_code=404, detail="Sesi konsultasi tidak ditemukan")
+        raise HTTPException(
+            status_code=404,
+            detail="Sesi konsultasi tidak ditemukan",
+        )
 
     msgs_sorted = sorted(
         session_obj.messages or [],
@@ -815,6 +908,7 @@ def get_chat_session_detail(
         updated_at=session_obj.updated_at,
         messages=[message_to_schema(m) for m in msgs_sorted],
     )
+
 
 if __name__ == "__main__":
     import uvicorn
