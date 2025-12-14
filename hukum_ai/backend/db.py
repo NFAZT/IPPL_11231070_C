@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Coba pakai DATABASE_URL langsung (misalnya dari Railway)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
+    # fallback: untuk local development
     POSTGRES_USER = os.getenv("POSTGRES_USER", "hukum_ai_user")
     POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "passwordku")
     POSTGRES_DB = os.getenv("POSTGRES_DB", "hukum_ai_db")
@@ -18,8 +20,6 @@ if not DATABASE_URL:
         f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
         f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
     )
-
-print(">>> DATABASE_URL in runtime:", DATABASE_URL)
 
 engine = create_engine(DATABASE_URL, echo=False)
 

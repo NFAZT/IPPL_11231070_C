@@ -45,14 +45,12 @@ GEN_MODEL = "gemini-2.0-flash"
 INDEX_PATH = BASE_DIR / "data" / "traffic_law_index.json"
 INTENT_MODEL_PATH = BASE_DIR / "data" / "intent_model.joblib"
 
+# index RAG
 try:
     with INDEX_PATH.open(encoding="utf-8") as f:
         INDEX: List[Dict[str, Any]] = json.load(f)
 except FileNotFoundError:
-    print(
-        f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. "
-        "RAG akan jalan tanpa konteks."
-    )
+    print(f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. RAG akan jalan tanpa konteks.")
     INDEX = []
 
 try:
@@ -254,10 +252,12 @@ app = FastAPI(
     description="Backend chatbot hukum lalu lintas dengan RAG manual dan Gemini",
 )
 
+
 @app.on_event("startup")
 def on_startup():
-    print("[STARTUP] init_db() dipanggil, membuat tabel jika belum ada...")
+    print("[STARTUP] init_db() dipanggil")
     init_db()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -299,6 +299,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    # bisa diisi username atau email
     identifier: str
     password: str
 
@@ -427,9 +428,7 @@ def rebuild_index_from_db(db: Session) -> int:
 
         isi = "\n".join(isi_parts).strip()
         if not isi:
-            print(
-                f"[rebuild-index] Dokumen id={doc_id} tidak punya isi, dilewati."
-            )
+            print(f"[rebuild-index] Dokumen id={doc_id} tidak punya isi, dilewati.")
             continue
 
         vec = embed_text(isi)
@@ -452,9 +451,7 @@ def rebuild_index_from_db(db: Session) -> int:
     global INDEX
     INDEX = new_index
 
-    print(
-        f"[rebuild-index] Selesai. Total: {len(new_index)} dokumen → {INDEX_PATH}"
-    )
+    print(f"[rebuild-index] Selesai. Total: {len(new_index)} dokumen → {INDEX_PATH}")
     return len(new_index)
 
 
@@ -464,8 +461,7 @@ def session_to_summary(session: ChatSession) -> ChatSessionSummary:
     if messages:
         last_msg = max(
             messages,
-            key=lambda m: m.created_at
-            or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda m: m.created_at or datetime.min.replace(tzinfo=timezone.utc),
         )
 
     preview = None
@@ -510,10 +506,7 @@ async def chat(
 
     if not question:
         return ChatResponse(
-            answer=(
-                "Silakan ajukan pertanyaan seputar lalu lintas atau hukum "
-                "lalu lintas."
-            ),
+            answer="Silakan ajukan pertanyaan seputar lalu lintas atau hukum lalu lintas.",
             sources=[],
             session_id=req.session_id,
         )
@@ -525,6 +518,7 @@ async def chat(
             session_obj = db.get(ChatSession, req.session_id)
 
         if session_obj is None:
+            # buat sesi baru
             session_obj = ChatSession(
                 username=username,
                 title=question[:120],
@@ -541,12 +535,18 @@ async def chat(
 
     session_id_for_log = session_obj.id if session_obj else None
     print(
-        f"[INTENT] {intent} | session={session_id_for_log} | "
-        f"user={username or '-'} | Q: {question}"
+        f"[INTENT] {intent} | session={session_id_for_log} | user={username or '-'} | Q: {question}"
     )
 
-    query_emb = embed_text(question)
-    docs = search_top_k(query_emb, k=3, min_score=0.3)
+    # embed + search dengan proteksi error
+    docs: List[Dict[str, Any]] = []
+    query_emb: List[float] | None = None
+    try:
+        query_emb = embed_text(question)
+        docs = search_top_k(query_emb, k=3, min_score=0.3)
+    except Exception as e:
+        print(f"[ERROR] Gagal embed/search: {e}")
+        docs = []
 
     if not docs and not is_traffic_related(question):
         answer_text = (
@@ -559,11 +559,18 @@ async def chat(
         context_text = build_context(docs)
 
         tone = detect_tone(question)
-        answer_text = generate_answer(question, context_text, tone=tone)
+        try:
+            answer_text = generate_answer(question, context_text, tone=tone)
+        except Exception as e:
+            print(f"[ERROR] Gagal generate jawaban: {e}")
+            answer_text = (
+                "Maaf, sistem sedang mengalami gangguan saat menghubungi model AI. "
+                "Silakan coba lagi beberapa saat lagi."
+            )
 
         sources_with_score: List[SourceDoc] = []
 
-        if intent == "butuh_pasal":
+        if intent == "butuh_pasal" and query_emb is not None:
             for d in docs:
                 score = cosine_similarity(query_emb, d["embedding"])
                 sources_with_score.append(
@@ -575,21 +582,26 @@ async def chat(
                     )
                 )
 
+    # simpan riwayat pesan ke DB HANYA untuk user login
     if not is_guest and session_obj is not None:
-        session_obj.updated_at = datetime.now(timezone.utc)
+        try:
+            session_obj.updated_at = datetime.now(timezone.utc)
 
-        user_msg = ChatMessage(
-            session_id=session_obj.id,
-            role="user",
-            content=question,
-        )
-        bot_msg = ChatMessage(
-            session_id=session_obj.id,
-            role="assistant",
-            content=answer_text,
-        )
-        db.add_all([user_msg, bot_msg])
-        db.commit()
+            user_msg = ChatMessage(
+                session_id=session_obj.id,
+                role="user",
+                content=question,
+            )
+            bot_msg = ChatMessage(
+                session_id=session_obj.id,
+                role="assistant",
+                content=answer_text,
+            )
+            db.add_all([user_msg, bot_msg])
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[ERROR] Gagal menyimpan riwayat chat: {e}")
 
         return ChatResponse(
             answer=answer_text,
@@ -597,12 +609,15 @@ async def chat(
             session_id=session_obj.id,
         )
 
+    # guest: tidak simpan apa-apa
     return ChatResponse(
         answer=answer_text,
         sources=sources_with_score,
         session_id=None,
     )
 
+
+# ====== AUTH & ARTICLE ENDPOINTS TETAP SAMA ======
 
 @app.post("/auth/register", response_model=UserOut)
 def register(
@@ -772,10 +787,7 @@ def update_article(
 
     if "keywords" in data:
         keywords = data.pop("keywords")
-        if (
-            keywords is not None
-            and hasattr(article, "set_keywords")
-        ):
+        if keywords is not None and hasattr(article, "set_keywords"):
             article.set_keywords(keywords)
 
     for field, value in data.items():
@@ -890,10 +902,7 @@ def get_chat_session_detail(
 ):
     session_obj = db.get(ChatSession, session_id)
     if not session_obj:
-        raise HTTPException(
-            status_code=404,
-            detail="Sesi konsultasi tidak ditemukan",
-        )
+        raise HTTPException(status_code=404, detail="Sesi konsultasi tidak ditemukan")
 
     msgs_sorted = sorted(
         session_obj.messages or [],
