@@ -16,17 +16,12 @@ backend/env/
 backend/ENV/
 backend/*.sqlite
 backend/*.sqlite3
-backend/*.db
-backend/traffic_law.db
 backend/*.log
 backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
 backend/**/__pycache__/
 backend/**/*.pyc
-
-backend/data/chat_history.json
-backend/data/traffic_law_index.json
 
 hukum_ai_app/.dart_tool/
 hukum_ai_app/build/
