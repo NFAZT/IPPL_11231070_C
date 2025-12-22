@@ -2,7 +2,6 @@ import os
 import json
 import math
 import sys
-import asyncio
 from pathlib import Path
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -39,34 +38,27 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-EMBED_MODEL = "gemini-embedding-001"
-GEN_MODEL = "gemini-2.0-flash"
+EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL") or "gemini-embedding-001"
+GEN_MODEL = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash-8b"
+FALLBACK_MODELS_RAW = os.getenv("GEMINI_FALLBACK_MODELS") or "gemini-1.5-flash"
+FALLBACK_MODELS = [m.strip() for m in FALLBACK_MODELS_RAW.split(",") if m.strip()]
+GEN_MODELS = [GEN_MODEL] + [m for m in FALLBACK_MODELS if m != GEN_MODEL]
+
 INDEX_PATH = BASE_DIR / "data" / "traffic_law_index.json"
 INTENT_MODEL_PATH = BASE_DIR / "data" / "intent_model.joblib"
 
-INDEX: List[Dict[str, Any]] = []
-INTENT_MODEL = None
+try:
+    with INDEX_PATH.open(encoding="utf-8") as f:
+        INDEX: List[Dict[str, Any]] = json.load(f)
+except FileNotFoundError:
+    print(f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. RAG akan jalan tanpa konteks.")
+    INDEX = []
 
-def load_index() -> List[Dict[str, Any]]:
-    try:
-        with INDEX_PATH.open(encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return data
-        return []
-    except FileNotFoundError:
-        print(f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. RAG akan jalan tanpa konteks.")
-        return []
-    except Exception as e:
-        print(f"[WARNING] Gagal memuat INDEX: {e}")
-        return []
-
-def load_intent_model():
-    try:
-        return joblib.load(INTENT_MODEL_PATH)
-    except Exception as e:
-        print(f"[WARNING] Gagal memuat intent model dari {INTENT_MODEL_PATH}: {e}")
-        return None
+try:
+    INTENT_MODEL = joblib.load(INTENT_MODEL_PATH)
+except Exception as e:
+    print(f"[WARNING] Gagal memuat intent model dari {INTENT_MODEL_PATH}: {e}")
+    INTENT_MODEL = None
 
 def get_db():
     db = SessionLocal()
@@ -125,16 +117,12 @@ def search_top_k(
 ) -> List[Dict[str, Any]]:
     if not INDEX:
         return []
-
+    if not query_embedding:
+        return []
     scored: List[tuple[float, Dict[str, Any]]] = []
-
     for doc in INDEX:
-        emb = doc.get("embedding")
-        if not isinstance(emb, list):
-            continue
-        score = cosine_similarity(query_embedding, emb)
+        score = cosine_similarity(query_embedding, doc["embedding"])
         scored.append((score, doc))
-
     scored.sort(key=lambda x: x[0], reverse=True)
     top_docs = [d for s, d in scored[:k] if s >= min_score]
     return top_docs
@@ -150,35 +138,23 @@ def predict_intent(question: str) -> str:
 def build_context(docs: List[Dict[str, Any]]) -> str:
     if not docs:
         return "Tidak ada konteks dokumen yang relevan ditemukan."
-
     parts = []
     for i, d in enumerate(docs, start=1):
         judul = d.get("judul", f"Dokumen {i}")
         isi = d.get("isi", "")
         parts.append(f"[{i}] {judul}\n{isi}")
-
     return "\n\n".join(parts)
 
 def detect_tone(question: str) -> str:
     q = question.lower()
-    slang_words = [
-        "ga",
-        "gak",
-        "gk",
-        "nggak",
-        "ngga",
-        "lu",
-        "lo",
-        "loe",
-        "bro",
-        "bray",
-        "wkwk",
-        "haha",
-        "hehe",
-    ]
+    slang_words = ["ga", "gak", "gk", "nggak", "ngga", "lu", "lo", "loe", "bro", "bray", "wkwk", "haha", "hehe"]
     if any(w in q for w in slang_words):
         return "santai"
     return "formal"
+
+def _is_quota_error(err: Exception) -> bool:
+    s = str(err)
+    return ("RESOURCE_EXHAUSTED" in s) or ("429" in s) or ("quota" in s.lower())
 
 def generate_answer(question: str, context: str, tone: str = "formal") -> str:
     if tone == "santai":
@@ -242,33 +218,44 @@ PERTANYAAN PENGGUNA:
 JAWABAN:
 """
 
-    result = client.models.generate_content(
-        model=GEN_MODEL,
-        contents=prompt,
-    )
-    return (result.text or "").strip()
+    last_err: Exception | None = None
+    for model in GEN_MODELS:
+        try:
+            result = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            text = (result.text or "").strip()
+            if text:
+                return text
+        except Exception as e:
+            last_err = e
+            if not _is_quota_error(e):
+                break
+    raise last_err or RuntimeError("Gemini tidak mengembalikan jawaban")
 
 app = FastAPI(
     title="Hukum Lalu Lintas Chatbot (RAG + Gemini)",
     description="Backend chatbot hukum lalu lintas dengan RAG manual dan Gemini",
 )
 
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    global INDEX
-    global INTENT_MODEL
-    INDEX = load_index()
-    INTENT_MODEL = load_intent_model()
-    print(f"[STARTUP] INDEX={len(INDEX)} intent_model={'on' if INTENT_MODEL else 'off'}")
+CORS_ALLOW_ORIGINS = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
+if CORS_ALLOW_ORIGINS == "*":
+    allow_origins = ["*"]
+else:
+    allow_origins = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allow_origins,
+    allow_credentials=False if allow_origins == ["*"] else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 class ChatRequest(BaseModel):
     question: str
@@ -391,7 +378,7 @@ def rebuild_index_from_db(db: Session) -> int:
 
     new_index: List[Dict[str, Any]] = []
 
-    for i, art in enumerate(articles, start=1):
+    for art in articles:
         doc_id = str(art.id)
         judul = f"{art.uu} - {art.pasal}: {art.title or ''}"
 
@@ -442,7 +429,7 @@ def session_to_summary(session: ChatSession) -> ChatSessionSummary:
 
     preview = None
     if last_msg:
-        text = (last_msg.content or "").strip()
+        text = last_msg.content.strip()
         preview = text[:180] + ("..." if len(text) > 180 else "")
 
     return ChatSessionSummary(
@@ -467,7 +454,10 @@ async def root():
     return {"status": "ok", "message": "Backend hukum lalu lintas siap."}
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest, db: Session = Depends(get_db)):
+async def chat(
+    req: ChatRequest,
+    db: Session = Depends(get_db),
+):
     question = (req.question or "").strip()
     username_raw = (req.username or "").strip()
 
@@ -485,9 +475,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
     if not is_guest:
         if req.session_id:
-            candidate = db.get(ChatSession, req.session_id)
-            if candidate and candidate.username == username:
-                session_obj = candidate
+            session_obj = db.get(ChatSession, req.session_id)
 
         if session_obj is None:
             session_obj = ChatSession(
@@ -505,17 +493,16 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         intent = predict_intent(question)
 
     session_id_for_log = session_obj.id if session_obj else None
-    print(f"[INTENT] {intent} | session={session_id_for_log} | user={username or '-'} | Q: {question}")
+    print(f"[INTENT] {intent} | session={session_id_for_log} | user={username or '-'} | model={GEN_MODEL}")
 
+    query_emb: List[float] = []
     try:
-        query_emb = await asyncio.to_thread(embed_text, question)
+        query_emb = embed_text(question)
     except Exception as e:
         print(f"[EMBED] failed: {e}")
         query_emb = []
 
-    docs = []
-    if query_emb:
-        docs = search_top_k(query_emb, k=3, min_score=0.3)
+    docs = search_top_k(query_emb, k=3, min_score=0.3) if query_emb else []
 
     if not docs and not is_traffic_related(question):
         answer_text = (
@@ -529,24 +516,25 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         tone = detect_tone(question)
 
         try:
-            answer_text = await asyncio.to_thread(generate_answer, question, context_text, tone)
+            answer_text = generate_answer(question, context_text, tone=tone)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Gemini gagal merespons: {str(e)}")
+            if _is_quota_error(e):
+                answer_text = "Layanan AI sedang penuh atau kuota gratis sedang habis. Coba lagi sebentar."
+            else:
+                answer_text = "Terjadi kendala saat memproses jawaban AI. Silakan coba lagi."
+            print(f"[GEMINI] failed: {e}")
 
         sources_with_score = []
-        if intent == "butuh_pasal" and query_emb and docs:
+
+        if intent == "butuh_pasal" and query_emb:
             for d in docs:
-                emb = d.get("embedding")
-                if isinstance(emb, list) and emb:
-                    score = cosine_similarity(query_emb, emb)
-                else:
-                    score = 0.0
+                score = cosine_similarity(query_emb, d["embedding"])
                 sources_with_score.append(
                     SourceDoc(
-                        id=str(d.get("id", "")),
+                        id=str(d["id"]),
                         judul=d.get("judul", ""),
                         isi=d.get("isi", ""),
-                        score=float(score),
+                        score=score,
                     )
                 )
 
@@ -579,8 +567,15 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     )
 
 @app.post("/auth/register", response_model=UserOut)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    existing_username = db.query(User).filter(User.username == payload.username).first()
+def register(
+    payload: RegisterRequest,
+    db: Session = Depends(get_db),
+):
+    existing_username = (
+        db.query(User)
+        .filter(User.username == payload.username)
+        .first()
+    )
     if existing_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -607,7 +602,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return user
 
 @app.post("/auth/login", response_model=LoginResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+):
     ident = payload.identifier.strip()
 
     query = db.query(User)
@@ -631,7 +629,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return LoginResponse(user=user)
 
 @app.post("/auth/forgot-password", response_model=SimpleMessageResponse)
-def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter(User.email == payload.email).first()
 
     if user:
@@ -657,10 +658,15 @@ def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db
         except Exception as e:
             print(f"[EMAIL] Error kirim email reset: {e}")
 
-    return SimpleMessageResponse(message="Jika email terdaftar, tautan reset password telah dikirim.")
+    return SimpleMessageResponse(
+        message="Jika email terdaftar, tautan reset password telah dikirim.",
+    )
 
 @app.post("/auth/reset-password", response_model=SimpleMessageResponse)
-def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
     token_obj = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == payload.token,
         PasswordResetToken.used == False,
@@ -688,7 +694,10 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     return SimpleMessageResponse(message="Password berhasil direset.")
 
 @app.post("/articles", response_model=LawArticleOut)
-def create_article(payload: LawArticleCreate, db: Session = Depends(get_db)):
+def create_article(
+    payload: LawArticleCreate,
+    db: Session = Depends(get_db),
+):
     article = LawArticle(
         uu=payload.uu,
         pasal=payload.pasal,
@@ -708,7 +717,11 @@ def create_article(payload: LawArticleCreate, db: Session = Depends(get_db)):
     return article_to_schema(article)
 
 @app.put("/articles/{article_id}", response_model=LawArticleOut)
-def update_article(article_id: int, payload: LawArticleUpdate, db: Session = Depends(get_db)):
+def update_article(
+    article_id: int,
+    payload: LawArticleUpdate,
+    db: Session = Depends(get_db),
+):
     article = db.get(LawArticle, article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Pasal tidak ditemukan")
@@ -729,7 +742,10 @@ def update_article(article_id: int, payload: LawArticleUpdate, db: Session = Dep
     return article_to_schema(article)
 
 @app.delete("/articles/{article_id}")
-def delete_article(article_id: int, db: Session = Depends(get_db)):
+def delete_article(
+    article_id: int,
+    db: Session = Depends(get_db),
+):
     article = db.get(LawArticle, article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Pasal tidak ditemukan")
@@ -740,23 +756,35 @@ def delete_article(article_id: int, db: Session = Depends(get_db)):
     return {"detail": "Pasal berhasil dihapus"}
 
 @app.get("/articles/{article_id}", response_model=LawArticleOut)
-def get_article(article_id: int, db: Session = Depends(get_db)):
+def get_article(
+    article_id: int,
+    db: Session = Depends(get_db),
+):
     article = db.get(LawArticle, article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Pasal tidak ditemukan")
     return article_to_schema(article)
 
 @app.get("/articles", response_model=List[LawArticleOut])
-def list_articles(limit: int = 50, db: Session = Depends(get_db)):
+def list_articles(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
     rows = db.query(LawArticle).order_by(LawArticle.id).limit(limit).all()
     return [article_to_schema(a) for a in rows]
 
 @app.post("/admin/rebuild-index")
-def admin_rebuild_index(db: Session = Depends(get_db)):
+def admin_rebuild_index(
+    db: Session = Depends(get_db),
+):
     try:
         total = rebuild_index_from_db(db)
         now = datetime.now(timezone.utc).isoformat()
-        meta = db.query(SystemMeta).filter(SystemMeta.key == "rag_index_last_built_at").first()
+        meta = (
+            db.query(SystemMeta)
+            .filter(SystemMeta.key == "rag_index_last_built_at")
+            .first()
+        )
         if meta is None:
             meta = SystemMeta(key="rag_index_last_built_at", value=now)
             db.add(meta)
@@ -771,18 +799,33 @@ def admin_rebuild_index(db: Session = Depends(get_db)):
             "last_built_at": now,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gagal membangun ulang index: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal membangun ulang index: {e}",
+        )
 
 @app.get("/admin/index-status")
-def admin_index_status(db: Session = Depends(get_db)):
-    meta = db.query(SystemMeta).filter(SystemMeta.key == "rag_index_last_built_at").first()
+def admin_index_status(
+    db: Session = Depends(get_db),
+):
+    meta = (
+        db.query(SystemMeta)
+        .filter(SystemMeta.key == "rag_index_last_built_at")
+        .first()
+    )
     return {
         "last_built_at": meta.value if meta else None,
         "indexed_documents": len(INDEX),
+        "embed_model": EMBED_MODEL,
+        "gen_model": GEN_MODEL,
+        "fallback_models": GEN_MODELS,
     }
 
 @app.get("/chat-history/{username}", response_model=List[ChatSessionSummary])
-def get_chat_history(username: str, db: Session = Depends(get_db)):
+def get_chat_history(
+    username: str,
+    db: Session = Depends(get_db),
+):
     rows = (
         db.query(ChatSession)
         .filter(ChatSession.username == username)
@@ -792,7 +835,10 @@ def get_chat_history(username: str, db: Session = Depends(get_db)):
     return [session_to_summary(s) for s in rows]
 
 @app.get("/chat-sessions/{session_id}", response_model=ChatSessionDetail)
-def get_chat_session_detail(session_id: int, db: Session = Depends(get_db)):
+def get_chat_session_detail(
+    session_id: int,
+    db: Session = Depends(get_db),
+):
     session_obj = db.get(ChatSession, session_id)
     if not session_obj:
         raise HTTPException(status_code=404, detail="Sesi konsultasi tidak ditemukan")
@@ -819,5 +865,5 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=port,
-        reload=True,
+        reload=False,
     )
