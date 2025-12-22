@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
-google-genai
-chromadb
+google-genai==1.56.0
 python-dotenv
 passlib[bcrypt]
 pydantic
@@ -10,3 +9,4 @@ joblib
 sqlalchemy
 psycopg2-binary
 python-multipart
+chromadb

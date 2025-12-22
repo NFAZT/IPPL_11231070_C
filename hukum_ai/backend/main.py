@@ -152,9 +152,16 @@ def detect_tone(question: str) -> str:
         return "santai"
     return "formal"
 
-def _is_quota_error(err: Exception) -> bool:
+def _is_retryable_error(err: Exception) -> bool:
     s = str(err)
-    return ("RESOURCE_EXHAUSTED" in s) or ("429" in s) or ("quota" in s.lower())
+    sl = s.lower()
+    if "resource_exhausted" in s or "429" in s or "quota" in sl:
+        return True
+    if "not_found" in s or "404" in s or "is not found for api version" in sl:
+        return True
+    if "unavailable" in sl or "503" in s or "504" in s or "deadline" in sl or "timeout" in sl:
+        return True
+    return False
 
 def generate_answer(question: str, context: str, tone: str = "formal") -> str:
     if tone == "santai":
@@ -230,8 +237,10 @@ JAWABAN:
                 return text
         except Exception as e:
             last_err = e
-            if not _is_quota_error(e):
+            print(f"[GEMINI] model_try={model} failed: {e}")
+            if not _is_retryable_error(e):
                 break
+            continue
     raise last_err or RuntimeError("Gemini tidak mengembalikan jawaban")
 
 app = FastAPI(
@@ -518,11 +527,11 @@ async def chat(
         try:
             answer_text = generate_answer(question, context_text, tone=tone)
         except Exception as e:
-            if _is_quota_error(e):
-                answer_text = "Layanan AI sedang penuh atau kuota gratis sedang habis. Coba lagi sebentar."
+            if _is_retryable_error(e):
+                answer_text = "Layanan AI sedang penuh atau model belum tersedia untuk API key ini. Coba lagi sebentar atau ganti model."
             else:
                 answer_text = "Terjadi kendala saat memproses jawaban AI. Silakan coba lagi."
-            print(f"[GEMINI] failed: {e}")
+            print(f"[GEMINI] failed_final: {e}")
 
         sources_with_score = []
 
