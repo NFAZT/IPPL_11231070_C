@@ -1,9 +1,0 @@
-<project version="4">
-<<<<<<< HEAD
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_24" project-jdk-name="Android API 36.0, extension level 17 Platform" project-jdk-type="Android SDK">
-=======
-  <component name="ProjectRootManager">
->>>>>>> 727fba9 (commit)
-    <output url="file://$PROJECT_DIR$/out" />
-  </component>
-</project>
