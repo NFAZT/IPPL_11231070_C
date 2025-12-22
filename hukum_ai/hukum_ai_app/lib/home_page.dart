@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class ChatMessage {
   final String id;
@@ -17,7 +16,6 @@ class ChatMessage {
 }
 
 class HomePage extends StatefulWidget {
-
   final String? username;
 
   const HomePage({Key? key, this.username}) : super(key: key);
@@ -36,25 +34,16 @@ class _HomePageState extends State<HomePage> {
   bool _isTyping = false;
 
   String? _username;
-
   int? _currentSessionId;
-
   bool _initialRouteHandled = false;
 
-  late stt.SpeechToText _speech;
-  bool _isSpeechAvailable = false;
-  bool _isListening = false;
-
   String get _effectiveUsername => _username ?? 'anon';
-
   bool get _isLoggedIn => _username != null;
 
   @override
   void initState() {
     super.initState();
     _username = widget.username;
-    _speech = stt.SpeechToText();
-    _initSpeech();
   }
 
   @override
@@ -75,28 +64,6 @@ class _HomePageState extends State<HomePage> {
         _loadSessionFromServer(sessionId);
       }
     }
-  }
-
-  Future<void> _initSpeech() async {
-    final available = await _speech.initialize(
-      onStatus: (status) {
-        if (!mounted) return;
-        setState(() {
-          _isListening = status == 'listening';
-        });
-      },
-      onError: (error) {
-        if (!mounted) return;
-        setState(() {
-          _isListening = false;
-        });
-      },
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _isSpeechAvailable = available;
-    });
   }
 
   DateTime _parseServerDateTime(String? raw) {
@@ -149,40 +116,6 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _isSending = false;
-      });
-    }
-  }
-
-  Future<void> _toggleListening() async {
-    if (!_isSpeechAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pengenalan suara tidak tersedia di perangkat ini.'),
-        ),
-      );
-      return;
-    }
-
-    if (_isListening) {
-      await _speech.stop();
-      setState(() {
-        _isListening = false;
-      });
-    } else {
-      await _speech.listen(
-        localeId: 'id_ID',
-        onResult: (result) {
-          if (!mounted) return;
-          setState(() {
-            _controller.text = result.recognizedWords;
-            _controller.selection = TextSelection.fromPosition(
-              TextPosition(offset: _controller.text.length),
-            );
-          });
-        },
-      );
-      setState(() {
-        _isListening = true;
       });
     }
   }
@@ -305,7 +238,6 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
-    _speech.stop();
     super.dispose();
   }
 
@@ -383,9 +315,7 @@ class _HomePageState extends State<HomePage> {
               if (!_isLoggedIn) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text(
-                      'Login dulu untuk melihat riwayat konsultasi.',
-                    ),
+                    content: Text('Login dulu untuk melihat riwayat konsultasi.'),
                   ),
                 );
                 return;
@@ -523,10 +453,8 @@ class _HomePageState extends State<HomePage> {
         }
 
         final msg = _messages[index];
-        final align =
-            msg.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-        final mainAlign =
-            msg.isUser ? MainAxisAlignment.end : MainAxisAlignment.start;
+        final align = msg.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+        final mainAlign = msg.isUser ? MainAxisAlignment.end : MainAxisAlignment.start;
 
         return Container(
           margin: const EdgeInsets.symmetric(vertical: 4),
@@ -564,9 +492,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       child: Text(
                         msg.text,
-                        style: const TextStyle(
-                          color: Colors.white,
-                        ),
+                        style: const TextStyle(color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -620,42 +546,29 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         children: [
           Expanded(
-            child: Stack(
-              alignment: Alignment.centerRight,
-              children: [
-                TextField(
-                  controller: _controller,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: 'Ketik pertanyaan atau gunakan mikrofon...',
-                    hintStyle: const TextStyle(color: Colors.white54),
-                    filled: true,
-                    fillColor: const Color(0xFF111827),
-                    contentPadding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 14,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: const BorderSide(color: Color(0xFF1F2937)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(999),
-                      borderSide: const BorderSide(color: Color(0xFFF97316)),
-                    ),
-                  ),
+            child: TextField(
+              controller: _controller,
+              minLines: 1,
+              maxLines: 4,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Ketik pertanyaan...',
+                hintStyle: const TextStyle(color: Colors.white54),
+                filled: true,
+                fillColor: const Color(0xFF111827),
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 10,
+                  horizontal: 14,
                 ),
-                IconButton(
-                  onPressed: _toggleListening,
-                  icon: Icon(
-                    _isListening ? Icons.mic : Icons.mic_none,
-                    size: 18,
-                    color: _isListening ? Colors.red : Colors.white70,
-                  ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  borderSide: const BorderSide(color: Color(0xFF1F2937)),
                 ),
-              ],
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(999),
+                  borderSide: const BorderSide(color: Color(0xFFF97316)),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -676,8 +589,7 @@ class _HomePageState extends State<HomePage> {
                       padding: EdgeInsets.all(10),
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
                   : const Icon(Icons.send, color: Colors.white),
@@ -697,8 +609,7 @@ class _TypingDot extends StatefulWidget {
   State<_TypingDot> createState() => _TypingDotState();
 }
 
-class _TypingDotState extends State<_TypingDot>
-    with SingleTickerProviderStateMixin {
+class _TypingDotState extends State<_TypingDot> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
 
   @override
