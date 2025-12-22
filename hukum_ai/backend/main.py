@@ -1,19 +1,18 @@
 import os
 import json
-import re
+import math
 import sys
 import asyncio
-import secrets
-import urllib.request
-import urllib.error
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
-
+import secrets
+import joblib
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, constr, ConfigDict
 from dotenv import load_dotenv
+from google import genai
 from sqlalchemy.orm import Session
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,24 +33,40 @@ from email_utils import send_password_reset_email
 
 load_dotenv()
 
-KNOWLEDGE_PATH = BASE_DIR / "data" / "traffic_law_knowledge.json"
-TRAIN_PATH = BASE_DIR / "data" / "question_train_data.json"
+api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise RuntimeError("GEMINI_API_KEY atau GOOGLE_API_KEY belum di-set di .env atau environment")
 
-RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))
-RAG_MIN_SCORE = float(os.getenv("RAG_MIN_SCORE", "0.1"))
+client = genai.Client(api_key=api_key)
 
-INTENT_SIM_THRESHOLD = float(os.getenv("INTENT_SIM_THRESHOLD", "0.25"))
+EMBED_MODEL = "gemini-embedding-001"
+GEN_MODEL = "gemini-2.0-flash"
+INDEX_PATH = BASE_DIR / "data" / "traffic_law_index.json"
+INTENT_MODEL_PATH = BASE_DIR / "data" / "intent_model.joblib"
 
-GEMINI_ENABLED = os.getenv("GEMINI_ENABLED", "false").lower() in ("1", "true", "yes", "y", "on")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "12"))
+INDEX: List[Dict[str, Any]] = []
+INTENT_MODEL = None
 
-CORS_ALLOW_ORIGINS = os.getenv("CORS_ALLOW_ORIGINS", "*").strip()
-if CORS_ALLOW_ORIGINS == "*":
-    ALLOW_ORIGINS = ["*"]
-else:
-    ALLOW_ORIGINS = [o.strip() for o in CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+def load_index() -> List[Dict[str, Any]]:
+    try:
+        with INDEX_PATH.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        return []
+    except FileNotFoundError:
+        print(f"[WARNING] INDEX file tidak ditemukan: {INDEX_PATH}. RAG akan jalan tanpa konteks.")
+        return []
+    except Exception as e:
+        print(f"[WARNING] Gagal memuat INDEX: {e}")
+        return []
+
+def load_intent_model():
+    try:
+        return joblib.load(INTENT_MODEL_PATH)
+    except Exception as e:
+        print(f"[WARNING] Gagal memuat intent model dari {INTENT_MODEL_PATH}: {e}")
+        return None
 
 def get_db():
     db = SessionLocal()
@@ -60,171 +75,25 @@ def get_db():
     finally:
         db.close()
 
-def tokenize(text: str) -> List[str]:
-    return [w for w in re.findall(r"[a-zA-Z0-9]+", (text or "").lower()) if len(w) > 2]
+def embed_text(text: str) -> List[float]:
+    result = client.models.embed_content(
+        model=EMBED_MODEL,
+        contents=text,
+    )
+    return result.embeddings[0].values
 
-def load_json_list(path: Path) -> List[Dict[str, Any]]:
-    try:
-        with path.open(encoding="utf-8") as f:
-            raw = json.load(f)
-    except FileNotFoundError:
-        return []
-    except Exception as e:
-        print(f"[WARNING] Gagal load JSON {path}: {e}")
-        return []
-    if isinstance(raw, dict):
-        return [raw]
-    if isinstance(raw, list):
-        return raw
-    return []
-
-INDEX: List[Dict[str, Any]] = []
-TRAIN_EXAMPLES: List[Dict[str, Any]] = []
-
-def build_index_from_knowledge_file() -> List[Dict[str, Any]]:
-    raw = load_json_list(KNOWLEDGE_PATH)
-    if not raw:
-        print(f"[WARNING] Knowledge file kosong / tidak ada: {KNOWLEDGE_PATH}")
-        return []
-
-    index: List[Dict[str, Any]] = []
-    for item in raw:
-        uu = item.get("uu") or ""
-        pasal = item.get("pasal") or ""
-        title = item.get("title") or ""
-        legal_text = item.get("legal_text") or ""
-        explanation = item.get("explanation") or ""
-        keywords = item.get("keywords") or []
-
-        judul = f"{uu} - {pasal}: {title}".strip(" -:")
-        parts = []
-        if legal_text:
-            parts.append(legal_text)
-        if explanation:
-            parts.append(explanation)
-        if keywords:
-            parts.append("Keyword: " + ", ".join(keywords))
-        isi = "\n".join(parts).strip()
-
-        tokens = tokenize(isi + " " + " ".join(keywords))
-
-        index.append(
-            {
-                "id": str(item.get("id", "")) or f"file:{uu}:{pasal}:{title}",
-                "judul": judul,
-                "isi": isi,
-                "uu": uu,
-                "pasal": pasal,
-                "title": title,
-                "legal_text": legal_text,
-                "explanation": explanation,
-                "keywords": keywords,
-                "tokens": tokens,
-                "source": "file",
-            }
-        )
-    print(f"[RAG] Loaded {len(index)} dokumen dari file {KNOWLEDGE_PATH}")
-    return index
-
-def build_index_from_db(db: Session) -> List[Dict[str, Any]]:
-    try:
-        rows = (
-            db.query(LawArticle)
-            .filter(LawArticle.status == "berlaku")
-            .order_by(LawArticle.id.asc())
-            .all()
-        )
-    except Exception as e:
-        print(f"[WARNING] Gagal query LawArticle untuk index: {e}")
-        return []
-
-    index: List[Dict[str, Any]] = []
-    for a in rows:
-        uu = getattr(a, "uu", "") or ""
-        pasal = getattr(a, "pasal", "") or ""
-        title = getattr(a, "title", "") or ""
-        legal_text = getattr(a, "legal_text", "") or ""
-        explanation = getattr(a, "explanation", "") or ""
-
-        keywords: List[str] = []
-        if hasattr(a, "get_keywords"):
-            try:
-                keywords = a.get_keywords() or []
-            except Exception:
-                keywords = []
-
-        judul = f"{uu} - {pasal}: {title}".strip(" -:")
-        parts = []
-        if legal_text:
-            parts.append(legal_text)
-        if explanation:
-            parts.append(explanation)
-        if keywords:
-            parts.append("Keyword: " + ", ".join(keywords))
-        isi = "\n".join(parts).strip()
-
-        tokens = tokenize(isi + " " + " ".join(keywords))
-
-        index.append(
-            {
-                "id": f"db:{a.id}",
-                "judul": judul,
-                "isi": isi,
-                "uu": uu,
-                "pasal": pasal,
-                "title": title,
-                "legal_text": legal_text,
-                "explanation": explanation,
-                "keywords": keywords,
-                "tokens": tokens,
-                "source": "db",
-            }
-        )
-    print(f"[RAG] Loaded {len(index)} dokumen dari DB LawArticle (status=berlaku)")
-    return index
-
-def rebuild_runtime_index(db: Optional[Session] = None) -> int:
-    global INDEX
-    docs = []
-    docs.extend(build_index_from_knowledge_file())
-    if db is not None:
-        docs.extend(build_index_from_db(db))
-
-    seen = set()
-    unique_docs = []
-    for d in docs:
-        key = (d.get("uu", ""), d.get("pasal", ""), d.get("title", ""), d.get("legal_text", ""))
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_docs.append(d)
-
-    INDEX = unique_docs
-    return len(INDEX)
-
-def load_training_examples() -> List[Dict[str, Any]]:
-    raw = load_json_list(TRAIN_PATH)
-    if not raw:
-        print(f"[INTENT] Training file kosong / tidak ada: {TRAIN_PATH}")
-        return []
-    examples: List[Dict[str, Any]] = []
-    for item in raw:
-        q = (item.get("question") or "").strip()
-        intent = (item.get("intent") or item.get("label") or "").strip()
-        if not q or not intent:
-            continue
-        examples.append(
-            {
-                "question": q,
-                "intent": intent,
-                "tokens": tokenize(q),
-            }
-        )
-    print(f"[INTENT] Loaded {len(examples)} training examples dari {TRAIN_PATH}")
-    return examples
+def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+    if len(v1) != len(v2):
+        return 0.0
+    dot = sum(a * b for a, b in zip(v1, v2))
+    norm1 = math.sqrt(sum(a * a for a in v1))
+    norm2 = math.sqrt(sum(b * b for b in v2))
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return dot / (norm1 * norm2)
 
 def is_traffic_related(question: str) -> bool:
-    q = (question or "").lower()
+    q = question.lower()
     keywords = [
         "lalu lintas",
         "angkutan jalan",
@@ -249,283 +118,154 @@ def is_traffic_related(question: str) -> bool:
     ]
     return any(kw in q for kw in keywords)
 
-def intent_rule_based(question: str) -> Optional[str]:
-    q = (question or "").lower()
-    hukum_keywords = [
-        "pasal",
-        "undang-undang",
-        "uu ",
-        "uu no",
-        "uu nomor",
-        "berapa denda",
-        "dendanya berapa",
-        "sanksi apa",
-        "hukuman apa",
-        "ancaman pidana",
-        "pidananya apa",
-        "ayat",
-    ]
-    if any(kw in q for kw in hukum_keywords):
-        return "butuh_pasal"
-    return None
-
-def best_intent_from_training(question: str) -> Optional[str]:
-    if not TRAIN_EXAMPLES:
-        return None
-
-    q_tokens = tokenize(question)
-    if not q_tokens:
-        return None
-
-    q_set = set(q_tokens)
-    best_score = 0.0
-    best_intent = None
-
-    for ex in TRAIN_EXAMPLES:
-        t = ex.get("tokens") or []
-        if not t:
-            continue
-        t_set = set(t)
-        inter = len(q_set & t_set)
-        if inter == 0:
-            continue
-        score = inter / max(1, len(q_set))
-        if score > best_score:
-            best_score = score
-            best_intent = ex.get("intent")
-
-    if best_intent and best_score >= INTENT_SIM_THRESHOLD:
-        return best_intent
-    return None
-
-def predict_intent(question: str) -> str:
-    rule = intent_rule_based(question)
-    if rule:
-        return rule
-    trained = best_intent_from_training(question)
-    if trained:
-        return trained
-    return "tips_umum"
-
-def search_top_k(question: str, k: int = 3, min_score: float = 0.1) -> List[Dict[str, Any]]:
+def search_top_k(
+    query_embedding: List[float],
+    k: int = 3,
+    min_score: float = 0.3,
+) -> List[Dict[str, Any]]:
     if not INDEX:
         return []
-    q_tokens = tokenize(question)
-    if not q_tokens:
-        return []
 
-    q_set = set(q_tokens)
     scored: List[tuple[float, Dict[str, Any]]] = []
 
     for doc in INDEX:
-        tokens = doc.get("tokens") or []
-        if not tokens:
-            tokens = tokenize(doc.get("isi", ""))
-            doc["tokens"] = tokens
-        t_set = set(tokens)
-        overlap = len(q_set & t_set)
-        if overlap == 0:
+        emb = doc.get("embedding")
+        if not isinstance(emb, list):
             continue
-
-        kw_overlap = 0
-        for kw in doc.get("keywords") or []:
-            kw_tokens = set(tokenize(kw))
-            kw_overlap += len(q_set & kw_tokens)
-
-        base = overlap / max(1, len(q_set))
-        score = base + 0.3 * kw_overlap
-        if score > 0:
-            scored.append((score, doc))
+        score = cosine_similarity(query_embedding, emb)
+        scored.append((score, doc))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top_docs: List[Dict[str, Any]] = []
-    for s, d in scored[:k]:
-        if s >= min_score:
-            doc_copy = dict(d)
-            doc_copy["score"] = float(s)
-            top_docs.append(doc_copy)
-
+    top_docs = [d for s, d in scored[:k] if s >= min_score]
     return top_docs
 
+def predict_intent(question: str) -> str:
+    if INTENT_MODEL is None:
+        return "tips_umum"
+    try:
+        return str(INTENT_MODEL.predict([question])[0])
+    except Exception:
+        return "tips_umum"
+
+def build_context(docs: List[Dict[str, Any]]) -> str:
+    if not docs:
+        return "Tidak ada konteks dokumen yang relevan ditemukan."
+
+    parts = []
+    for i, d in enumerate(docs, start=1):
+        judul = d.get("judul", f"Dokumen {i}")
+        isi = d.get("isi", "")
+        parts.append(f"[{i}] {judul}\n{isi}")
+
+    return "\n\n".join(parts)
+
 def detect_tone(question: str) -> str:
-    q = (question or "").lower()
-    slang_words = ["ga", "gak", "gk", "nggak", "ngga", "lu", "lo", "loe", "bro", "bray", "wkwk", "haha", "hehe"]
+    q = question.lower()
+    slang_words = [
+        "ga",
+        "gak",
+        "gk",
+        "nggak",
+        "ngga",
+        "lu",
+        "lo",
+        "loe",
+        "bro",
+        "bray",
+        "wkwk",
+        "haha",
+        "hehe",
+    ]
     if any(w in q for w in slang_words):
         return "santai"
     return "formal"
 
-def shorten(text: str, max_len: int = 400) -> str:
-    text = (text or "").strip()
-    if len(text) <= max_len:
-        return text
-    cut = text[:max_len]
-    last_space = cut.rfind(" ")
-    if last_space > 100:
-        cut = cut[:last_space]
-    return cut.rstrip() + "..."
-
-def generate_answer(question: str, docs: List[Dict[str, Any]], tone: str, intent: str) -> str:
-    if not docs:
-        if tone == "santai":
-            return "Maaf, untuk pertanyaan ini aku belum menemukan pasal yang benar-benar cocok di basis data. Yang penting tetap patuhi rambu, jaga kecepatan, dan utamakan keselamatan, ya."
-        return "Maaf, untuk pertanyaan tersebut saya belum menemukan pasal yang spesifik di basis data. Sebaiknya tetap mematuhi rambu, marka, dan instruksi petugas demi keselamatan."
-
-    doc = docs[0]
-    uu = doc.get("uu") or "peraturan lalu lintas yang berlaku"
-    pasal = doc.get("pasal") or ""
-    title = doc.get("title") or ""
-    legal_text = doc.get("legal_text") or ""
-    explanation = doc.get("explanation") or ""
-
-    legal_short = shorten(legal_text, 500)
-    expl_short = shorten(explanation, 500)
-
+def generate_answer(question: str, context: str, tone: str = "formal") -> str:
     if tone == "santai":
-        pembuka = "Secara singkat, begini ya:\n\n"
-        subjek = "kamu"
+        style = """
+GUNAKAN GAYA BAHASA:
+- Bahasa Indonesia santai dan akrab, tapi tetap sopan.
+- Boleh pakai kata seperti "kamu", "aja", "nggak", "kok" jika pertanyaan pengguna juga santai.
+- JANGAN gunakan kata-kata seperti "bro", "bray", "lu", "loe", atau kata kasar/merendahkan.
+- Hindari bercanda berlebihan; tetap fokus menjelaskan aturan dan alasan keselamatan dengan contoh sehari-hari.
+"""
     else:
-        pembuka = "Secara singkat, penjelasannya sebagai berikut:\n\n"
-        subjek = "Anda"
+        style = """
+GUNAKAN GAYA BAHASA:
+- Bahasa Indonesia jelas dan cukup formal, mudah dipahami orang awam.
+- Gunakan sapaan netral seperti "Anda" atau tanpa sapaan jika tidak perlu.
+- JANGAN gunakan kata gaul seperti "bro", "lu", "gue", "wkwk", dan sejenisnya.
+- Jawaban boleh hangat dan ramah, tapi tetap terasa rapi dan profesional.
+"""
 
-    if intent == "butuh_pasal":
-        bagian1 = f"Menurut {uu}"
-        if pasal:
-            bagian1 += f" {pasal}"
-        if title:
-            bagian1 += f", tentang {title}."
-        else:
-            bagian1 += "."
-        if legal_short:
-            bagian1 += f" Ketentuannya kurang lebih berbunyi seperti ini:\n{legal_short}"
-        if expl_short:
-            bagian2 = f"\n\nDalam praktiknya, maknanya untuk {subjek} adalah:\n{expl_short}"
-        else:
-            bagian2 = ""
-        ringkas = "\n\nIntinya, {subjek} perlu mematuhi ketentuan ini agar terhindar dari sanksi dan menjaga keselamatan di jalan.".replace(
-            "{subjek}", subjek
-        )
-        return pembuka + bagian1 + bagian2 + ringkas
+    prompt = f"""
+Kamu adalah asisten yang paham hukum dan keselamatan lalu lintas di Indonesia.
 
-    bagian1 = ""
-    if title:
-        bagian1 = f"{title} diatur dalam {uu}"
-        if pasal:
-            bagian1 += f" {pasal}."
-        else:
-            bagian1 += "."
-    else:
-        bagian1 = f"Hal ini diatur dalam {uu}"
-        if pasal:
-            bagian1 += f" {pasal}."
-        else:
-            bagian1 += "."
+{style}
 
-    if expl_short:
-        bagian2 = f"\n\nSecara sederhana, maknanya untuk {subjek} adalah:\n{expl_short}"
-    elif legal_short:
-        bagian2 = f"\n\nJika disederhanakan, isi aturannya untuk {subjek} kira-kira seperti ini:\n{legal_short}"
-    else:
-        bagian2 = "\n\nAturannya menekankan pentingnya tertib berlalu lintas dan mengutamakan keselamatan semua pengguna jalan."
+TUJUAN:
+- Jawab semua pertanyaan yang masih dalam lingkup lalu lintas dan hukum lalu lintas.
+- Jika pertanyaan berkaitan dengan pelanggaran (misalnya tidak pakai helm, ngebut, melanggar rambu):
+  - Jelaskan apakah itu pelanggaran menurut konteks.
+  - Jika di konteks ada pasal/UU yang relevan, sebutkan secara singkat di dalam kalimat (nama UU dan pasal).
+  - Tambahkan juga alasan keselamatan: kenapa aturan itu penting.
+- Jika pertanyaan lebih bersifat umum/tips:
+  - Fokus pada tips berkendara yang aman dan tertib.
 
-    ringkas = "\n\nSingkatnya, patuhi aturan ini supaya perjalanan tetap aman dan terhindar dari masalah hukum."
-    return pembuka + bagian1 + bagian2 + ringkas
+JAWABAN UNTUK PERTANYAAN DEFINISI:
+- Jika pertanyaan JELAS meminta pengertian/arti/definisi suatu istilah (misalnya mengandung frasa seperti "apa itu", "yang dimaksud dengan", "arti dari"):
+  - Buat jawaban dalam dua paragraf pendek:
+    1) Paragraf pertama menjelaskan secara ringkas menurut ketentuan hukum atau rumusan resminya.
+    2) Paragraf kedua mengulang dengan bahasa yang sangat sederhana untuk orang awam.
+  - JANGAN menulis label khusus seperti "Definisi hukum:" atau "Versi gampangnya:".
 
-def build_gemini_prompt(question: str, intent: str, tone: str, docs: List[Dict[str, Any]]) -> str:
-    style = "Bahasa Indonesia santai tapi sopan." if tone == "santai" else "Bahasa Indonesia sopan dan jelas."
-    if intent == "butuh_pasal":
-        instruction = (
-            "Jawab pertanyaan berdasarkan konteks pasal/peraturan di bawah. "
-            "Kalau konteks kurang, bilang tidak menemukan pasal yang tepat dan sarankan user memperjelas."
-        )
-    else:
-        instruction = (
-            "Jawab pertanyaan dengan penjelasan praktis dan aman, tetap berdasarkan konteks di bawah. "
-            "Kalau konteks kurang, berikan saran umum keselamatan berkendara tanpa mengarang pasal."
-        )
+PERTANYAAN PENDEK:
+- HANYA jika pertanyaan sangat pendek dan benar-benar ambigu (sekitar 1–3 kata tanpa konteks, misalnya "umur?", "gimana?", "boleh nggak?"):
+  - Jangan langsung menyebut pasal/UU spesifik.
+  - Jelaskan bahwa pertanyaan masih terlalu umum dan minta pengguna memperjelas.
+  - Berikan satu contoh pertanyaan yang lebih spesifik.
+- Selain kasus ini, JANGAN mengatakan bahwa pertanyaan terlalu umum.
 
-    ctx_lines = []
-    for i, d in enumerate(docs[:3], start=1):
-        judul = d.get("judul", "")
-        isi = shorten(d.get("isi", ""), 900)
-        ctx_lines.append(f"[Sumber {i}] {judul}\n{isi}")
+BATASAN TENTANG SUMBER:
+- Jangan membuat bagian khusus berjudul "Sumber:".
+- Jika perlu menyebut dasar hukum, sebutkan maksimal 1–2 pasal yang paling relevan dan selipkan di dalam kalimat penjelasan.
 
-    context = "\n\n".join(ctx_lines).strip()
-    if not context:
-        context = "(Tidak ada konteks pasal yang ditemukan)"
+RINGKASAN AKHIR:
+- Setelah menjelaskan pokok-pokok jawaban, AKHIRI jawaban dengan SATU kalimat ringkas yang merangkum inti jawaban.
 
-    return (
-        f"{instruction}\n"
-        f"Gaya bahasa: {style}\n\n"
-        f"KONTEKS:\n{context}\n\n"
-        f"PERTANYAAN USER:\n{question}\n"
+KONTEKS DOKUMEN:
+{context}
+
+PERTANYAAN PENGGUNA:
+{question}
+
+JAWABAN:
+"""
+
+    result = client.models.generate_content(
+        model=GEN_MODEL,
+        contents=prompt,
     )
-
-def gemini_generate_text(prompt: str, api_key: str, model: str, timeout_seconds: float) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [
-            {"role": "user", "parts": [{"text": prompt}]}
-        ]
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-            raw = resp.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        body = ""
-        try:
-            body = e.read().decode("utf-8")
-        except Exception:
-            body = ""
-        raise RuntimeError(f"Gemini HTTPError {e.code}: {body[:300]}") from e
-    except Exception as e:
-        raise RuntimeError(f"Gemini request failed: {e}") from e
-
-    try:
-        parsed = json.loads(raw)
-    except Exception as e:
-        raise RuntimeError(f"Gemini response not JSON: {raw[:300]}") from e
-
-    candidates = parsed.get("candidates") or []
-    for cand in candidates:
-        content = cand.get("content") or {}
-        parts = content.get("parts") or []
-        texts = [p.get("text") for p in parts if isinstance(p, dict) and p.get("text")]
-        if texts:
-            return "\n".join(texts).strip()
-
-    raise RuntimeError("Gemini response empty")
+    return (result.text or "").strip()
 
 app = FastAPI(
-    title="Hukum Lalu Lintas Chatbot (RAG + Optional Gemini)",
-    description="Backend chatbot hukum lalu lintas dengan knowledge base lokal + fallback kalau Gemini gagal",
+    title="Hukum Lalu Lintas Chatbot (RAG + Gemini)",
+    description="Backend chatbot hukum lalu lintas dengan RAG manual dan Gemini",
 )
 
 @app.on_event("startup")
 def on_startup():
-    print("[STARTUP] init_db() dipanggil")
     init_db()
-
-    global TRAIN_EXAMPLES
-    TRAIN_EXAMPLES = load_training_examples()
-
-    try:
-        db = SessionLocal()
-        total = rebuild_runtime_index(db)
-        print(f"[STARTUP] Runtime RAG index built. total_docs={total}")
-    except Exception as e:
-        print(f"[WARNING] Gagal build index saat startup: {e}")
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
+    global INDEX
+    global INTENT_MODEL
+    INDEX = load_index()
+    INTENT_MODEL = load_intent_model()
+    print(f"[STARTUP] INDEX={len(INDEX)} intent_model={'on' if INTENT_MODEL else 'off'}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOW_ORIGINS,
-    allow_credentials=False if ALLOW_ORIGINS == ["*"] else True,
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -641,6 +381,56 @@ class ChatSessionDetail(BaseModel):
     updated_at: datetime | None = None
     messages: List[ChatMessageOut]
 
+def rebuild_index_from_db(db: Session) -> int:
+    articles: List[LawArticle] = (
+        db.query(LawArticle)
+        .filter(LawArticle.status == "berlaku")
+        .order_by(LawArticle.id)
+        .all()
+    )
+
+    new_index: List[Dict[str, Any]] = []
+
+    for i, art in enumerate(articles, start=1):
+        doc_id = str(art.id)
+        judul = f"{art.uu} - {art.pasal}: {art.title or ''}"
+
+        keywords = art.get_keywords() if hasattr(art, "get_keywords") else []
+        legal_text = art.legal_text or ""
+        explanation = art.explanation or ""
+
+        isi_parts = []
+        if legal_text:
+            isi_parts.append(legal_text)
+        if explanation:
+            isi_parts.append(explanation)
+        if keywords:
+            isi_parts.append("Keyword: " + ", ".join(keywords))
+
+        isi = "\n".join(isi_parts).strip()
+        if not isi:
+            continue
+
+        vec = embed_text(isi)
+
+        new_index.append(
+            {
+                "id": doc_id,
+                "judul": judul,
+                "isi": isi,
+                "embedding": vec,
+            }
+        )
+
+    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with INDEX_PATH.open("w", encoding="utf-8") as f:
+        json.dump(new_index, f, ensure_ascii=False, indent=2)
+
+    global INDEX
+    INDEX = new_index
+
+    return len(new_index)
+
 def session_to_summary(session: ChatSession) -> ChatSessionSummary:
     messages = session.messages or []
     last_msg = None
@@ -652,7 +442,7 @@ def session_to_summary(session: ChatSession) -> ChatSessionSummary:
 
     preview = None
     if last_msg:
-        text = last_msg.content.strip()
+        text = (last_msg.content or "").strip()
         preview = text[:180] + ("..." if len(text) > 180 else "")
 
     return ChatSessionSummary(
@@ -708,72 +498,73 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(session_obj)
 
-    intent = predict_intent(question)
-    session_id_for_log = session_obj.id if session_obj else None
-    print(f"[CHAT] intent={intent} session={session_id_for_log} user={username or '-'} gemini={GEMINI_ENABLED}")
+    words = question.split()
+    if len(words) <= 2:
+        intent = "tips_umum"
+    else:
+        intent = predict_intent(question)
 
-    docs: List[Dict[str, Any]] = search_top_k(question, k=RAG_TOP_K, min_score=RAG_MIN_SCORE)
+    session_id_for_log = session_obj.id if session_obj else None
+    print(f"[INTENT] {intent} | session={session_id_for_log} | user={username or '-'} | Q: {question}")
+
+    try:
+        query_emb = await asyncio.to_thread(embed_text, question)
+    except Exception as e:
+        print(f"[EMBED] failed: {e}")
+        query_emb = []
+
+    docs = []
+    if query_emb:
+        docs = search_top_k(query_emb, k=3, min_score=0.3)
 
     if not docs and not is_traffic_related(question):
         answer_text = (
-            "Maaf, aku cuma bisa bantu pertanyaan yang masih berkaitan "
+            "Maaf, aku cuma bisa membantu pertanyaan yang masih berkaitan "
             "dengan lalu lintas dan hukum lalu lintas di Indonesia. "
             "Coba ubah pertanyaannya supaya tetap dalam topik lalu lintas, ya."
         )
         sources_with_score: List[SourceDoc] = []
     else:
+        context_text = build_context(docs)
         tone = detect_tone(question)
 
-        rag_answer = generate_answer(question, docs, tone=tone, intent=intent)
-        answer_text = rag_answer
-
-        if GEMINI_ENABLED and GEMINI_API_KEY and is_traffic_related(question):
-            try:
-                prompt = build_gemini_prompt(question, intent=intent, tone=tone, docs=docs)
-                gemini_text = await asyncio.to_thread(
-                    gemini_generate_text,
-                    prompt,
-                    GEMINI_API_KEY,
-                    GEMINI_MODEL,
-                    GEMINI_TIMEOUT_SECONDS,
-                )
-                if gemini_text and gemini_text.strip():
-                    answer_text = gemini_text.strip()
-                    print("[GEMINI] success")
-            except Exception as e:
-                print(f"[GEMINI] failed -> fallback to RAG. err={e}")
+        try:
+            answer_text = await asyncio.to_thread(generate_answer, question, context_text, tone)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gemini gagal merespons: {str(e)}")
 
         sources_with_score = []
-        if intent == "butuh_pasal":
+        if intent == "butuh_pasal" and query_emb and docs:
             for d in docs:
+                emb = d.get("embedding")
+                if isinstance(emb, list) and emb:
+                    score = cosine_similarity(query_emb, emb)
+                else:
+                    score = 0.0
                 sources_with_score.append(
                     SourceDoc(
                         id=str(d.get("id", "")),
                         judul=d.get("judul", ""),
                         isi=d.get("isi", ""),
-                        score=float(d.get("score", 0.0)),
+                        score=float(score),
                     )
                 )
 
     if not is_guest and session_obj is not None:
-        try:
-            session_obj.updated_at = datetime.now(timezone.utc)
+        session_obj.updated_at = datetime.now(timezone.utc)
 
-            user_msg = ChatMessage(
-                session_id=session_obj.id,
-                role="user",
-                content=question,
-            )
-            bot_msg = ChatMessage(
-                session_id=session_obj.id,
-                role="assistant",
-                content=answer_text,
-            )
-            db.add_all([user_msg, bot_msg])
-            db.commit()
-        except Exception as e:
-            db.rollback()
-            print(f"[ERROR] Gagal menyimpan riwayat chat: {e}")
+        user_msg = ChatMessage(
+            session_id=session_obj.id,
+            role="user",
+            content=question,
+        )
+        bot_msg = ChatMessage(
+            session_id=session_obj.id,
+            role="assistant",
+            content=answer_text,
+        )
+        db.add_all([user_msg, bot_msg])
+        db.commit()
 
         return ChatResponse(
             answer=answer_text,
@@ -963,7 +754,7 @@ def list_articles(limit: int = 50, db: Session = Depends(get_db)):
 @app.post("/admin/rebuild-index")
 def admin_rebuild_index(db: Session = Depends(get_db)):
     try:
-        total = rebuild_runtime_index(db)
+        total = rebuild_index_from_db(db)
         now = datetime.now(timezone.utc).isoformat()
         meta = db.query(SystemMeta).filter(SystemMeta.key == "rag_index_last_built_at").first()
         if meta is None:
@@ -975,9 +766,8 @@ def admin_rebuild_index(db: Session = Depends(get_db)):
 
         return {
             "detail": "Index berhasil dibangun ulang",
-            "indexed_documents": total,
-            "knowledge_path": str(KNOWLEDGE_PATH),
-            "train_path": str(TRAIN_PATH),
+            "total_active_articles": total,
+            "index_path": str(INDEX_PATH),
             "last_built_at": now,
         }
     except Exception as e:
@@ -989,9 +779,6 @@ def admin_index_status(db: Session = Depends(get_db)):
     return {
         "last_built_at": meta.value if meta else None,
         "indexed_documents": len(INDEX),
-        "training_examples": len(TRAIN_EXAMPLES),
-        "gemini_enabled": GEMINI_ENABLED,
-        "gemini_model": GEMINI_MODEL,
     }
 
 @app.get("/chat-history/{username}", response_model=List[ChatSessionSummary])
@@ -1010,7 +797,10 @@ def get_chat_session_detail(session_id: int, db: Session = Depends(get_db)):
     if not session_obj:
         raise HTTPException(status_code=404, detail="Sesi konsultasi tidak ditemukan")
 
-    msgs_sorted = sorted(session_obj.messages or [], key=lambda m: m.created_at)
+    msgs_sorted = sorted(
+        session_obj.messages or [],
+        key=lambda m: m.created_at,
+    )
 
     return ChatSessionDetail(
         id=session_obj.id,
@@ -1023,6 +813,11 @@ def get_chat_session_detail(session_id: int, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("PORT", "8000"))
-    debug = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=debug)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+    )

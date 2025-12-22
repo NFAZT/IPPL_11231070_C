@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:http/http.dart' as http;
 
 class SourceDoc {
@@ -41,7 +42,7 @@ class ChatResponse {
   factory ChatResponse.fromJson(Map<String, dynamic> json) {
     final sourcesJson = json['sources'] as List<dynamic>? ?? [];
 
-    final rawSessionId = json['session_id'];
+    final rawSessionId = json['session_id'] ?? json['id'];
     int? sessionId;
     if (rawSessionId is int) {
       sessionId = rawSessionId;
@@ -52,7 +53,8 @@ class ChatResponse {
     return ChatResponse(
       answer: json['answer'] ?? '',
       sources: sourcesJson
-          .map((e) => SourceDoc.fromJson(e as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map((e) => SourceDoc.fromJson(e))
           .toList(),
       sessionId: sessionId,
     );
@@ -110,7 +112,7 @@ class ChatSessionSummary {
     return ChatSessionSummary(
       sessionId: sessionId,
       title: title,
-      lastPreview: preview,
+      lastPreview: preview.isEmpty ? null : preview,
       createdAt: createdAt,
     );
   }
@@ -164,7 +166,8 @@ class ChatSessionDetail {
       sessionId: sessionId,
       username: json['username'] ?? '',
       messages: msgsJson
-          .map((e) => ChatTurn.fromJson(e as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map((e) => ChatTurn.fromJson(e))
           .toList(),
     );
   }
@@ -187,7 +190,7 @@ class AuthUser {
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     return AuthUser(
-      id: json['id'] as int,
+      id: (json['id'] is int) ? (json['id'] as int) : int.tryParse('${json['id']}') ?? 0,
       username: json['username'] ?? '',
       email: json['email'] ?? '',
       fullName: json['full_name'] as String?,
@@ -197,7 +200,45 @@ class AuthUser {
 }
 
 class ApiService {
-  static const String baseUrl = 'https://ippl11231070c-production.up.railway.app';
+  static const String defaultBaseUrl = 'https://api.hukumai.id';
+
+  final String baseUrl;
+  final http.Client _client;
+  final Duration timeout;
+
+  ApiService({
+    String? baseUrl,
+    http.Client? client,
+    Duration? timeout,
+  })  : baseUrl = (baseUrl?.trim().isNotEmpty ?? false) ? baseUrl!.trim() : defaultBaseUrl,
+        _client = client ?? http.Client(),
+        timeout = timeout ?? const Duration(seconds: 20);
+
+  dynamic _decodeJsonBody(String body) {
+    if (body.trim().isEmpty) return null;
+    try {
+      return jsonDecode(body);
+    } catch (_) {
+      return body;
+    }
+  }
+
+  String _extractErrorMessage(int statusCode, dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final detail = decoded['detail'];
+      if (detail is String && detail.trim().isNotEmpty) {
+        return detail.trim();
+      }
+      final message = decoded['message'];
+      if (message is String && message.trim().isNotEmpty) {
+        return message.trim();
+      }
+    }
+    if (decoded is String && decoded.trim().isNotEmpty) {
+      return decoded.trim();
+    }
+    return 'Request gagal. Status: $statusCode';
+  }
 
   Future<ChatResult> askTrafficLaw(
     String question, {
@@ -218,31 +259,32 @@ class ApiService {
       body['session_id'] = sessionId;
     }
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final chatResp = ChatResponse.fromJson(data);
-
-      String fullAnswer = chatResp.answer;
-
-      if (chatResp.sources.isNotEmpty) {
-        final judulList = chatResp.sources
-            .map((s) => s.judul.trim())
-            .where((j) => j.isNotEmpty)
-            .toList();
-
-        if (judulList.isNotEmpty) {
-          final sumberText = "\n\nSumber: ${judulList.join(' ; ')}";
-          fullAnswer += sumberText;
-        }
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Format respons tidak sesuai (harus Map).');
       }
 
-      if (fullAnswer.trim().isEmpty) {
+      final chatResp = ChatResponse.fromJson(decoded);
+
+      String fullAnswer = chatResp.answer.trim();
+      if (fullAnswer.isEmpty) {
         fullAnswer = 'Jawaban kosong dari server.';
       }
 
@@ -252,107 +294,138 @@ class ApiService {
         sources: chatResp.sources,
       );
     } else {
-      throw Exception(
-        'Gagal menghubungi server: ${response.statusCode}\n${response.body}',
-      );
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
   Future<List<ChatSessionSummary>> getChatHistory(String username) async {
     final url = Uri.parse('$baseUrl/chat-history/$username');
 
-    final response = await http.get(
-      url,
-      headers: {'Content-Type': 'application/json'},
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            url,
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-
-      if (data is List) {
-        return data
-            .map(
-              (e) => ChatSessionSummary.fromJson(
-                e as Map<String, dynamic>,
-              ),
-            )
+      if (decoded is List) {
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map((e) => ChatSessionSummary.fromJson(e))
             .toList();
-      } else {
-        throw Exception(
-          'Format respons tidak sesuai (harus List). Dapat: ${data.runtimeType}',
-        );
       }
+      throw Exception('Format respons tidak sesuai (harus List).');
     } else {
-      throw Exception(
-        'Gagal mengambil riwayat chat: ${response.statusCode}\n${response.body}',
-      );
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
   Future<ChatSessionDetail> getChatSessionDetail(int sessionId) async {
     final url = Uri.parse('$baseUrl/chat-sessions/$sessionId');
 
-    final response = await http.get(
-      url,
-      headers: {'Content-Type': 'application/json'},
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            url,
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return ChatSessionDetail.fromJson(data);
+      if (decoded is! Map<String, dynamic>) {
+        throw Exception('Format respons tidak sesuai (harus Map).');
+      }
+      return ChatSessionDetail.fromJson(decoded);
     } else {
-      throw Exception(
-        'Gagal mengambil detail sesi: ${response.statusCode}\n${response.body}',
-      );
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
   Future<String> forgotPassword(String email) async {
     final url = Uri.parse('$baseUrl/auth/forgot-password');
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email}),
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email}),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data is Map<String, dynamic>) {
-        return data['message'] as String? ??
-            'Permintaan reset password diproses.';
+      if (decoded is Map<String, dynamic>) {
+        final msg = decoded['message'];
+        if (msg is String && msg.trim().isNotEmpty) return msg.trim();
       }
       return 'Permintaan reset password diproses.';
     } else {
-      throw Exception(
-        'Gagal mengirim permintaan reset password: '
-        '${response.statusCode}\n${response.body}',
-      );
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
   Future<String> resetPassword(String token, String newPassword) async {
     final url = Uri.parse('$baseUrl/auth/reset-password');
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'token': token,
-        'new_password': newPassword,
-      }),
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'token': token,
+              'new_password': newPassword,
+            }),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data is Map<String, dynamic>) {
-        return data['message'] as String? ?? 'Password berhasil direset.';
+      if (decoded is Map<String, dynamic>) {
+        final msg = decoded['message'];
+        if (msg is String && msg.trim().isNotEmpty) return msg.trim();
       }
       return 'Password berhasil direset.';
     } else {
-      throw Exception(
-        'Gagal reset password: ${response.statusCode}\n${response.body}',
-      );
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
@@ -369,65 +442,70 @@ class ApiService {
       'email': email,
       'password': password,
     };
+
     if (fullName != null && fullName.trim().isNotEmpty) {
       body['full_name'] = fullName.trim();
     }
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data is Map<String, dynamic>) {
-        return AuthUser.fromJson(data);
-      } else {
-        throw Exception('Format respons register tidak sesuai.');
+      if (decoded is Map<String, dynamic>) {
+        return AuthUser.fromJson(decoded);
       }
+      throw Exception('Format respons register tidak sesuai.');
     } else {
-      String message = 'Pendaftaran gagal.';
-      try {
-        final data = jsonDecode(response.body);
-        if (data is Map<String, dynamic> && data['detail'] is String) {
-          message = data['detail'] as String;
-        }
-      } catch (_) {}
-      throw Exception(message);
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 
   Future<AuthUser> login(String identifier, String password) async {
     final url = Uri.parse('$baseUrl/auth/login');
 
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'identifier': identifier,
-        'password': password,
-      }),
-    );
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'identifier': identifier,
+              'password': password,
+            }),
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw Exception('Request timeout. Coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal terhubung ke server: $e');
+    }
+
+    final decoded = _decodeJsonBody(response.body);
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-
-      if (data is Map<String, dynamic> &&
-          data['user'] is Map<String, dynamic>) {
-        return AuthUser.fromJson(data['user'] as Map<String, dynamic>);
-      } else {
-        throw Exception('Format respons login tidak sesuai.');
+      if (decoded is Map<String, dynamic> && decoded['user'] is Map<String, dynamic>) {
+        return AuthUser.fromJson(decoded['user'] as Map<String, dynamic>);
       }
+      throw Exception('Format respons login tidak sesuai.');
     } else {
-      String message = 'Login gagal.';
-      try {
-        final data = jsonDecode(response.body);
-        if (data is Map<String, dynamic> && data['detail'] is String) {
-          message = data['detail'] as String;
-        }
-      } catch (_) {}
-      throw Exception(message);
+      final msg = _extractErrorMessage(response.statusCode, decoded);
+      throw Exception(msg);
     }
   }
 }
