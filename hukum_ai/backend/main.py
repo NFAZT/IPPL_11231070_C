@@ -44,8 +44,6 @@ API_KEY = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").str
 GEMINI_ENABLED = os.getenv("GEMINI_ENABLED", "true").lower() in ("1", "true", "yes", "y", "on")
 GEMINI_ENABLED = GEMINI_ENABLED and bool(API_KEY) and (genai is not None)
 
-ADMIN_API_KEY = (os.getenv("ADMIN_API_KEY") or "").strip()
-
 CLIENT = None
 if GEMINI_ENABLED:
     try:
@@ -246,13 +244,6 @@ def get_db():
     finally:
         db.close()
 
-def _require_admin(request: Request):
-    if not ADMIN_API_KEY:
-        raise HTTPException(status_code=403, detail="Admin API belum diaktifkan.")
-    key = (request.headers.get("x-admin-key") or "").strip()
-    if not key or not secrets.compare_digest(key, ADMIN_API_KEY):
-        raise HTTPException(status_code=401, detail="Unauthorized.")
-
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -334,10 +325,16 @@ def is_traffic_related(question: str) -> bool:
     keywords = [
         "lalu lintas","angkutan jalan","jalan raya","jalan tol","helm","sabuk pengaman",
         "motor","mobil","kendaraan","sim","stnk","tilang","etle","ngebut","batas kecepatan",
-        "rambu","lampu merah","polisi lalu lintas","pengemudi","penumpang","berkendara",
-        "parkir","kecelakaan","tabrakan","menabrak","marka","putar balik","melawan arus"
+        "rambu","marka","stop line","zebra cross","penyeberangan",
+        "lampu merah","lampu kuning","lampu hijau","lampu lalu lintas","traffic light","apill",
+        "polisi lalu lintas","pengemudi","penumpang","berkendara",
+        "parkir","kecelakaan","tabrakan","menabrak","putar balik","melawan arus","menyalip","bahu jalan"
     ]
-    return any(k in q for k in keywords)
+    if any(k in q for k in keywords):
+        return True
+    if re.search(r"\blampu\b.*\b(kuning|merah|hijau)\b", q):
+        return True
+    return False
 
 def smalltalk_match(question: str) -> Optional[str]:
     q = _norm(question)
@@ -442,15 +439,36 @@ def detect_tone(question: str) -> str:
 def parse_pref_patch(question: str) -> Dict[str, Any]:
     q = _norm(question)
     patch: Dict[str, Any] = {}
-    if "jawab singkat" in q or "singkat aja" in q or "ringkas" in q:
+
+    if ("jawab singkat" in q) or ("jawaban singkat" in q) or ("singkat aja" in q) or ("singkatnya" in q) or ("ringkas" in q) or ("pendek" in q):
         patch["verbosity"] = "short"
-    if "jawab panjang" in q or "detail" in q or "jelasin lengkap" in q:
+    if ("jawab panjang" in q) or ("jawaban panjang" in q) or ("jawaban detail" in q) or ("detail" in q) or ("jelasin lengkap" in q) or ("lengkap" in q):
         patch["verbosity"] = "long"
+
     if "santai aja" in q or "bahasa santai" in q:
         patch["tone_pref"] = "santai"
     if "formal aja" in q or "bahasa formal" in q:
         patch["tone_pref"] = "formal"
+
     return patch
+
+def _is_preference_only(question: str, patch: Dict[str, Any]) -> bool:
+    if not patch:
+        return False
+    if is_traffic_related(question):
+        return False
+    if smalltalk_match(question) is not None:
+        return False
+
+    q = _norm(question)
+    cleaned = re.sub(r"[^\w\s]", " ", q)
+    cleaned = re.sub(
+        r"\b(aku|saya|mau|ingin|tolong|pls|please|dong|ya|yah|deh|jawab|jawaban|singkat|ringkas|pendek|detail|panjang|lengkap|aja|saja|kok|nih|gimana|bagaimana)\b",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return len(cleaned.split()) <= 2
 
 def get_session_prefs(db: Session, session_id: int) -> Dict[str, Any]:
     ck = f"pref:{session_id}"
@@ -499,15 +517,38 @@ def compute_verbosity(question: str, intent: str, prefs: Dict[str, Any]) -> str:
     if prefs.get("verbosity") in ("short","normal","long"):
         return prefs["verbosity"]
     q = _norm(question)
-    if "singkat" in q or "ringkas" in q:
+    if "singkat" in q or "ringkas" in q or "pendek" in q:
         return "short"
-    if "detail" in q or "lengkap" in q:
+    if "detail" in q or "lengkap" in q or "panjang" in q:
         return "long"
     if intent == "butuh_pasal":
         return "normal"
     if len(q.split()) <= 6:
         return "short"
     return "normal"
+
+def postprocess_answer_by_verbosity(text: str, verbosity: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return t
+    if verbosity != "short":
+        return t
+
+    sentences = re.split(r"(?<=[\.\?\!])\s+", t)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    head = " ".join(sentences[:2]).strip() if sentences else t
+
+    summary = None
+    for line in reversed(t.splitlines()):
+        line = line.strip()
+        if line.lower().startswith("intinya"):
+            summary = line
+            break
+
+    if summary and summary not in head:
+        return (head + "\n\n" + summary).strip()
+
+    return head.strip()
 
 def _shorten(s: str, n: int) -> str:
     s = (s or "").strip()
@@ -621,6 +662,7 @@ def suggested_next_questions(intent: str, question: str) -> List[str]:
 
 def build_context(docs: List[Dict[str, Any]], history: str, meta: Dict[str, Any]) -> str:
     parts: List[str] = []
+
     if meta:
         lines: List[str] = []
         lines.append("BAHASA_JAWABAN: English" if meta.get("language") == "en" else "BAHASA_JAWABAN: Indonesia")
@@ -633,11 +675,14 @@ def build_context(docs: List[Dict[str, Any]], history: str, meta: Dict[str, Any]
         if meta.get("mode") == "action_helper":
             lines.append("FORMAT: jika memberi langkah, gunakan langkah bernomor (1), (2), (3) dan opsi alternatif bila perlu.")
         parts.append("ATURAN TAMBAHAN:\n" + "\n".join(lines))
+
     if history:
         parts.append("RIWAYAT PERCAKAPAN:\n" + history)
+
     if not docs:
         parts.append("KONTEKS DOKUMEN:\nTidak ada konteks dokumen yang relevan ditemukan.")
         return "\n\n".join(parts).strip()
+
     doc_blocks: List[str] = []
     total = 0
     for i, d in enumerate(docs, start=1):
@@ -649,6 +694,7 @@ def build_context(docs: List[Dict[str, Any]], history: str, meta: Dict[str, Any]
             break
         doc_blocks.append(block)
         total += len(block)
+
     parts.append("KONTEKS DOKUMEN:\n" + ("\n\n".join(doc_blocks) if doc_blocks else "Tidak ada konteks dokumen yang relevan ditemukan."))
     return "\n\n".join(parts).strip()
 
@@ -672,6 +718,7 @@ def _model_candidates(model: str) -> List[str]:
 def generate_answer(question: str, context: str, tone: str = "formal") -> Tuple[str, str]:
     if not GEMINI_ENABLED or CLIENT is None:
         raise RuntimeError("Gemini tidak aktif")
+
     if tone == "santai":
         style = """
 GUNAKAN GAYA BAHASA:
@@ -688,6 +735,7 @@ GUNAKAN GAYA BAHASA:
 - JANGAN gunakan kata gaul seperti "bro", "lu", "gue", "wkwk", dan sejenisnya.
 - Jawaban boleh hangat dan ramah, tapi tetap terasa rapi dan profesional.
 """
+
     prompt = f"""
 Kamu adalah asisten yang paham hukum dan keselamatan lalu lintas di Indonesia.
 
@@ -731,6 +779,7 @@ PERTANYAAN PENGGUNA:
 
 JAWABAN:
 """
+
     last_err: Optional[Exception] = None
     for base_model in GEN_MODELS:
         for model in _model_candidates(base_model):
@@ -964,11 +1013,11 @@ def should_append_disclaimer(intent: str, answer: str) -> bool:
         return True
     return False
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)):
+async def _chat_impl(req: ChatRequest, request: Request, db: Session) -> ChatResponse:
     ip = _client_ip(request)
     if not _rate_limit_ok(ip):
         raise HTTPException(status_code=429, detail="Terlalu banyak request. Coba lagi sebentar.")
+
     question = (req.question or "").strip()
     if not question:
         return ChatResponse(
@@ -978,7 +1027,9 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=["Tanya soal ETLE/tilang", "Tanya soal SIM/STNK", "Tanya soal aturan helm & keselamatan"],
             disclaimer=final_disclaimer("id"),
         )
+
     lang = detect_language(question)
+
     inj = looks_like_prompt_injection(question)
     if inj:
         ans = (
@@ -1000,6 +1051,7 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions("tips_umum", question),
             disclaimer=final_disclaimer(lang),
         )
+
     safety_block = safety_refuse_or_redirect(question, lang)
     if safety_block:
         return ChatResponse(
@@ -1012,6 +1064,7 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions("tips_umum", question),
             disclaimer=final_disclaimer(lang),
         )
+
     sk = smalltalk_match(question)
     if sk is not None:
         tone = detect_tone(question)
@@ -1022,11 +1075,14 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             prefs = set_session_prefs(db, s.id, patch)
         if prefs.get("tone_pref") in ("santai","formal"):
             tone = prefs["tone_pref"]
+
         ans = smalltalk_answer(sk, lang)
+
         db.add(ChatMessage(session_id=s.id, role="user", content=question))
         db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
         s.updated_at = _now_utc()
         db.commit()
+
         return ChatResponse(
             answer=ans,
             sources=[],
@@ -1037,18 +1093,70 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions("smalltalk", question),
             disclaimer=final_disclaimer(lang),
         )
+
     s = ensure_session(db, req.username, req.session_id, title_seed=question)
     prefs = get_session_prefs(db, s.id)
+
     patch = parse_pref_patch(question)
     if patch:
         prefs = set_session_prefs(db, s.id, patch)
+
+    if _is_preference_only(question, patch):
+        tone = detect_tone(question)
+        if prefs.get("tone_pref") in ("santai","formal"):
+            tone = prefs["tone_pref"]
+        vb = prefs.get("verbosity", "normal")
+        if vb == "short":
+            ans = (
+                "Siap. Untuk sesi ini aku jawab singkat ya. Sekarang kamu mau tanya apa soal lalu lintas? 🙂\n"
+                "Intinya: tulis pertanyaan lalu lintasnya, nanti aku jawab ringkas."
+            ) if lang != "en" else (
+                "Got it. I’ll keep answers short for this session. What traffic question do you have? 🙂\n"
+                "Bottom line: ask a traffic question and I’ll answer briefly."
+            )
+        elif vb == "long":
+            ans = (
+                "Siap. Untuk sesi ini aku jawab lebih detail ya. Sekarang kamu mau tanya apa soal lalu lintas? 🙂\n"
+                "Intinya: tulis pertanyaan lalu lintasnya, nanti aku jelasin lengkap."
+            ) if lang != "en" else (
+                "Got it. I’ll answer in more detail for this session. What traffic question do you have? 🙂\n"
+                "Bottom line: ask a traffic question and I’ll answer thoroughly."
+            )
+        else:
+            ans = (
+                "Oke. Preferensi jawaban sudah aku simpan untuk sesi ini. Sekarang kamu mau tanya apa soal lalu lintas? 🙂\n"
+                "Intinya: tulis pertanyaan lalu lintasnya, nanti aku bantu."
+            ) if lang != "en" else (
+                "Okay. I saved your preference for this session. What traffic question do you have? 🙂\n"
+                "Bottom line: ask a traffic question and I’ll help."
+            )
+
+        db.add(ChatMessage(session_id=s.id, role="user", content=question))
+        db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
+        s.updated_at = _now_utc()
+        db.commit()
+
+        return ChatResponse(
+            answer=ans,
+            sources=[],
+            session_id=s.id,
+            intent="meta",
+            tone=tone,
+            mode="preference_set",
+            category="preferences",
+            suggested_questions=suggested_next_questions("meta", question),
+            disclaimer=final_disclaimer(lang),
+        )
+
     intent = predict_intent(question)
     tone = detect_tone(question)
     if prefs.get("tone_pref") in ("santai","formal"):
         tone = prefs["tone_pref"]
+
     verbosity = compute_verbosity(question, intent, prefs)
     mode = "answer"
     category = None
+
     faq = faq_match(question)
     if faq is not None and intent != "butuh_pasal" and is_traffic_related(question):
         mode = "faq"
@@ -1057,10 +1165,12 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
         disc = final_disclaimer(lang)
         if disc and should_append_disclaimer(intent, ans):
             ans = ans.strip() + "\n\n" + disc
+
         db.add(ChatMessage(session_id=s.id, role="user", content=question))
         db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
         s.updated_at = _now_utc()
         db.commit()
+
         return ChatResponse(
             answer=ans,
             sources=[],
@@ -1072,6 +1182,7 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions(intent, question),
             disclaimer=disc,
         )
+
     if not is_traffic_related(question):
         ans = (
             "Maaf, aku fokus membantu pertanyaan yang masih berkaitan dengan lalu lintas dan hukum lalu lintas di Indonesia. "
@@ -1084,10 +1195,12 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
         )
         disc = final_disclaimer(lang)
         ans = ans.strip() + "\n\n" + disc
+
         db.add(ChatMessage(session_id=s.id, role="user", content=question))
         db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
         s.updated_at = _now_utc()
         db.commit()
+
         return ChatResponse(
             answer=ans,
             sources=[],
@@ -1098,16 +1211,19 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions(intent, question),
             disclaimer=disc,
         )
+
     qs = case_intake_questions(question)
     if qs and (len(_norm(question).split()) <= 6 or intent == "butuh_pasal"):
         mode = "case_intake"
         ans = clarify_message(tone, lang, qs)
         disc = final_disclaimer(lang)
         ans = ans.strip() + "\n\n" + disc
+
         db.add(ChatMessage(session_id=s.id, role="user", content=question))
         db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
         s.updated_at = _now_utc()
         db.commit()
+
         return ChatResponse(
             answer=ans,
             sources=[],
@@ -1118,7 +1234,9 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions(intent, question),
             disclaimer=disc,
         )
+
     history_text = fetch_history_text(db, s.id)
+
     query_emb: List[float] = []
     docs: List[Dict[str, Any]] = []
     try:
@@ -1128,6 +1246,7 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
         print(f"[EMBED/RAG] failed: {e}")
         query_emb = []
         docs = []
+
     if intent == "butuh_pasal" and not docs:
         mode = "guardrail"
         ans = (
@@ -1141,10 +1260,12 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
         )
         disc = final_disclaimer(lang)
         ans = ans.strip() + "\n\n" + disc
+
         db.add(ChatMessage(session_id=s.id, role="user", content=question))
         db.add(ChatMessage(session_id=s.id, role="assistant", content=ans))
         s.updated_at = _now_utc()
         db.commit()
+
         return ChatResponse(
             answer=ans,
             sources=[],
@@ -1155,12 +1276,14 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
             suggested_questions=suggested_next_questions(intent, question),
             disclaimer=disc,
         )
+
     meta = {
         "language": lang,
         "verbosity": verbosity,
         "mode": "action_helper" if action_helper_mode(question) else "normal"
     }
     context_text = build_context(docs, history_text, meta)
+
     model_used = None
     try:
         answer_text, model_used = generate_answer(question, context_text, tone=tone)
@@ -1182,15 +1305,21 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
                 "There was an issue generating the AI response. Please try again.\n"
                 "Bottom line: retry shortly."
             )
+
+    answer_text = postprocess_answer_by_verbosity(answer_text, verbosity)
+
     disc = final_disclaimer(lang)
     if disc and should_append_disclaimer(intent, answer_text):
         answer_text = answer_text.strip() + "\n\n" + disc
+
     sources = build_sources(intent, query_emb, docs)
     sugg = suggested_next_questions(intent, question)
+
     db.add(ChatMessage(session_id=s.id, role="user", content=question))
     db.add(ChatMessage(session_id=s.id, role="assistant", content=answer_text))
     s.updated_at = _now_utc()
     db.commit()
+
     return ChatResponse(
         answer=answer_text,
         sources=sources,
@@ -1204,36 +1333,50 @@ async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)
         disclaimer=disc,
     )
 
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, request: Request, db: Session = Depends(get_db)):
+    return await _chat_impl(req, request, db)
+
 @app.post("/chat-stream")
-async def chat_stream(req: ChatRequest, request: Request, db: Session = Depends(get_db)):
+async def chat_stream(req: ChatRequest, request: Request):
     ip = _client_ip(request)
     if not _rate_limit_ok(ip):
         raise HTTPException(status_code=429, detail="Terlalu banyak request. Coba lagi sebentar.")
+
     async def _sleep_async(sec: float):
         import asyncio
         await asyncio.sleep(sec)
+
     async def event_gen():
-        yield "event: typing\ndata: 1\n\n"
-        resp = await chat(req, request, db)
-        text = resp.answer or ""
-        i = 0
-        while i < len(text):
-            chunk = text[i : i + MAX_ANSWER_CHARS_STREAM_CHUNK]
-            safe = chunk.replace("\n", "\\n")
-            yield f"event: chunk\ndata: {safe}\n\n"
-            i += MAX_ANSWER_CHARS_STREAM_CHUNK
-            await _sleep_async(0.02)
-        payload = {
-            "session_id": resp.session_id,
-            "intent": resp.intent,
-            "tone": resp.tone,
-            "mode": resp.mode,
-            "category": resp.category,
-            "suggested_questions": resp.suggested_questions,
-            "sources": [s.model_dump() for s in (resp.sources or [])],
-            "model_used": resp.model_used,
-        }
-        yield "event: done\ndata: " + json.dumps(payload, ensure_ascii=False).replace("\n"," ") + "\n\n"
+        db = SessionLocal()
+        try:
+            yield "event: typing\ndata: 1\n\n"
+            resp = await _chat_impl(req, request, db)
+            text = resp.answer or ""
+            i = 0
+            while i < len(text):
+                chunk = text[i : i + MAX_ANSWER_CHARS_STREAM_CHUNK]
+                safe = chunk.replace("\n", "\\n")
+                yield f"event: chunk\ndata: {safe}\n\n"
+                i += MAX_ANSWER_CHARS_STREAM_CHUNK
+                await _sleep_async(0.02)
+            payload = {
+                "session_id": resp.session_id,
+                "intent": resp.intent,
+                "tone": resp.tone,
+                "mode": resp.mode,
+                "category": resp.category,
+                "suggested_questions": resp.suggested_questions,
+                "sources": [s.model_dump() for s in (resp.sources or [])],
+                "model_used": resp.model_used,
+            }
+            yield "event: done\ndata: " + json.dumps(payload, ensure_ascii=False).replace("\n"," ") + "\n\n"
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 @app.post("/feedback", response_model=SimpleMessageResponse)
@@ -1247,27 +1390,6 @@ def feedback(payload: Dict[str, Any], db: Session = Depends(get_db)):
     except Exception:
         pass
     return SimpleMessageResponse(message="Makasih, feedbacknya sudah diterima.")
-
-@app.get("/admin/users", response_model=List[UserOut])
-def admin_get_all_users(
-    request: Request,
-    limit: int = 50,
-    offset: int = 0,
-    active_only: bool = False,
-    db: Session = Depends(get_db),
-):
-    _require_admin(request)
-    if limit < 1:
-        limit = 1
-    if limit > 200:
-        limit = 200
-    if offset < 0:
-        offset = 0
-    q = db.query(User)
-    if active_only:
-        q = q.filter(User.is_active == True)
-    rows = q.order_by(User.id.asc()).offset(offset).limit(limit).all()
-    return rows
 
 @app.post("/auth/register", response_model=UserOut)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
