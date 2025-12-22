@@ -39,7 +39,7 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL") or "gemini-embedding-001"
-GEN_MODEL = os.getenv("GEMINI_MODEL") or "gemini-1.5-flash"
+GEN_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
 FALLBACK_MODELS_RAW = os.getenv("GEMINI_FALLBACK_MODELS") or "gemini-1.5-flash"
 FALLBACK_MODELS = [m.strip() for m in FALLBACK_MODELS_RAW.split(",") if m.strip()]
 GEN_MODELS = [GEN_MODEL] + [m for m in FALLBACK_MODELS if m != GEN_MODEL]
